@@ -20,11 +20,12 @@ import {
   type NodeChange,
   type NodeProps,
 } from '@xyflow/react';
-import { Check, CirclePlay, Copy, Flag, MessageSquare, Pause, PenLine, Play, Plus, Save, Scale, Square, Trash2, X } from 'lucide-react';
+import { Check, CirclePlay, LayoutGrid, Copy, Flag, MessageSquare, Pause, PenLine, Play, Plus, Save, Scale, Square, Trash2, X } from 'lucide-react';
 import type { NodeRunState, PEdge, PNode, PNodeData, Pipeline, PipelineRun } from '../../../shared/types.ts';
 import { api, qs } from '../api.ts';
 import { deletePipeline, ensureConv, getState, safe, savePipeline, setState, toast, useStore } from '../store.ts';
 import { ConfigPicker } from './ConfigPicker.tsx';
+import { assignLanes, autoLayout, edgeTypes } from './flowLayout.tsx';
 import { ApprovalCard } from './ChatView.tsx';
 import { Markdown } from './Message.tsx';
 import { AGENT_NAME, AgentIcon, EFFORT_LABEL, Field, PERMISSIONS, Popover, Select, Spinner, Toggle, cx, fmtDuration, fmtTokens, fmtUsage, inputCls, modelLabel } from './ui.tsx';
@@ -156,7 +157,7 @@ function toRF(p: Pipeline, run?: PipelineRun): { nodes: RFNode[]; edges: Edge[] 
     position: n.position,
     data: { ...n.data, run: run?.nodes[n.id], current: run?.current === n.id, runMode: !!run, task: run?.task },
   }));
-  const edges: Edge[] = p.edges.map((e) => edgeStyle(e, run));
+  const edges: Edge[] = assignLanes(p.edges.map((e) => edgeStyle(e, run)), nodes);
   return { nodes, edges };
 }
 
@@ -169,7 +170,7 @@ function edgeStyle(e: PEdge, run?: PipelineRun): Edge {
     source: e.source,
     target: e.target,
     sourceHandle: e.sourceHandle ?? undefined,
-    type: 'smoothstep',
+    type: 'flow',
     animated: active || firstActive,
     style: { stroke: color, strokeWidth: 1.8, strokeDasharray: e.sourceHandle === 'fail' ? '6 4' : undefined },
     markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
@@ -256,6 +257,18 @@ function FlowInner() {
     }, 60);
     return () => clearTimeout(t);
   }, [fitKey, nodes.length, activeTab, rf]);
+
+  // loop-back lanes follow the nodes as they are dragged around
+  const shownEdges = useMemo(() => assignLanes(edges, nodes), [edges, nodes]);
+
+  const tidy = () => {
+    const p = fromRF(base ?? { id: '', name: '', nodes: [], edges: [] }, nodes, edges);
+    const pos = autoLayout(p.nodes, p.edges);
+    const next = nodes.map((n) => ({ ...n, position: pos[n.id] ?? n.position }));
+    setNodes(next);
+    setDirty(true);
+    setTimeout(() => void rf.fitView({ padding: 0.12, maxZoom: 1.1, duration: 250 }), 50);
+  };
 
   const onNodesChange = useCallback(
     (ch: NodeChange<RFNode>[]) => {
@@ -425,6 +438,9 @@ function FlowInner() {
                   </div>
                 )}
               </Popover>
+              <button type="button" onClick={tidy} title="Tự sắp xếp các bước thành một hàng theo thứ tự chạy" className="inline-flex h-7 items-center gap-1 rounded-lg border border-line px-2.5 text-[12.5px] hover:bg-hover">
+                <LayoutGrid size={13} /> Sắp xếp
+              </button>
               <button type="button" onClick={() => save(false)} disabled={!dirty} className="inline-flex h-7 items-center gap-1 rounded-lg border border-line px-2.5 text-[12.5px] hover:bg-hover disabled:opacity-40">
                 <Save size={13} /> Lưu
               </button>
@@ -501,8 +517,9 @@ function FlowInner() {
         <div ref={wrapper} className="min-w-0 flex-1">
           <ReactFlow
             nodes={nodes}
-            edges={edges}
+            edges={shownEdges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}

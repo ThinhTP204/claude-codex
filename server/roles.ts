@@ -88,12 +88,13 @@ export const DEFAULT_PIPELINE: Pipeline = {
   id: 'plan-review-code',
   name: 'Plan → Review → Code → Test',
   nodes: [
-    { id: 'task', type: 'task', position: { x: 0, y: 20 }, data: { label: 'Task' } },
-    node('plan', 230, 0, 'plan'),
-    node('review', 520, 0, 'review'),
-    node('code', 230, 230, 'code'),
-    node('test', 520, 230, 'test', { approval: false }),
-    { id: 'end', type: 'end', position: { x: 820, y: 260 }, data: { label: 'Done' } },
+    // one row in run order; fail links loop back over the top (see ui flowLayout.tsx)
+    { id: 'task', type: 'task', position: { x: 0, y: 30 }, data: { label: 'Task' } },
+    node('plan', 320, 0, 'plan'),
+    node('review', 640, 0, 'review'),
+    node('code', 960, 0, 'code'),
+    node('test', 1280, 0, 'test', { approval: false }),
+    { id: 'end', type: 'end', position: { x: 1600, y: 30 }, data: { label: 'Done' } },
   ],
   edges: [
     { id: 'e1', source: 'task', target: 'plan', sourceHandle: 'out' },
