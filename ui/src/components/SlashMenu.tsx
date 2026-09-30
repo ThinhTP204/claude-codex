@@ -35,7 +35,7 @@ export function useSlashMenu(text: string, project: string | undefined, agent: A
   const [items, setItems] = useState<SlashItem[]>();
   const [index, setIndex] = useState(0);
   const [closedFor, setClosedFor] = useState<string>();
-  const open = query !== undefined && !!project && agent !== 'antigravity' && closedFor !== text;
+  const open = query !== undefined && !!project && closedFor !== text;
 
   useEffect(() => {
     if (!open || !project) return;
@@ -92,7 +92,7 @@ function SlashList({ items, shown, index, setIndex, pick, agent }: { items?: Sla
   return (
     <div className="absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-xl border border-line bg-raised shadow-pop">
       <div className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-[11.5px] text-faint">
-        {agent === 'codex' ? 'Skill của Codex (gọi bằng $tên)' : 'Lệnh & skill của Claude trong project này'}
+        {agent === 'codex' ? 'Skill của Codex (gọi bằng $tên)' : agent === 'antigravity' ? 'Skill & lệnh của Antigravity' : 'Lệnh & skill của Claude trong project này'}
         <span className="ml-auto">↑↓ chọn · Enter/Tab dùng · Esc đóng</span>
       </div>
       <div ref={list} className="max-h-72 overflow-auto p-1">

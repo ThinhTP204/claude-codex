@@ -4,6 +4,7 @@ import type { Block, RunConfig, Usage } from '../shared/types.ts';
 import { killTree, resolveCommand, spawnOpts } from './platform.ts';
 import { noteClaudeModel } from './catalog.ts';
 import { nestedRepos, workspaceFolders } from './projects.ts';
+import { agySkillFile } from './commands.ts';
 import path from 'node:path';
 import { ATTACH_DIR } from './store.ts';
 import fs from 'node:fs';
@@ -133,7 +134,17 @@ export function startRun(cfg: RunConfig, prompt: string, cwd: string, resume: st
   const isAgy = cfg.agent === 'antigravity';
   const bin = isClaude ? 'claude' : isAgy ? 'agy' : 'codex';
   const args = isClaude ? claudeArgs(cfg, resume) : isAgy ? agyArgs(cfg, resume) : codexArgs(cfg, resume, attachedImages(prompt));
-  const fullPrompt = !isClaude && cfg.systemPrompt?.trim() ? `<instructions>\n${cfg.systemPrompt}\n</instructions>\n\n${prompt}` : prompt;
+  let userPrompt = prompt;
+  if (isAgy) {
+    // "/skill args": headless agy may not expand slash commands, so name the skill file explicitly
+    // (the message may follow a <context> block handed over from other agents)
+    const cut = prompt.lastIndexOf('</context>\n\n');
+    const head = cut >= 0 ? prompt.slice(0, cut + 12) : '';
+    const m = /^\/([\w:.-]+)(?:\s+([\s\S]*))?$/.exec(prompt.slice(head.length).trim());
+    const file = m && agySkillFile(cwd, m[1]);
+    if (m && file) userPrompt = `${head}Dùng skill "${m[1]}" (đọc hướng dẫn trong ${file}) cho yêu cầu sau:\n${m[2]?.trim() || '(không có thêm yêu cầu, làm theo skill)'}`;
+  }
+  const fullPrompt = !isClaude && cfg.systemPrompt?.trim() ? `<instructions>\n${cfg.systemPrompt}\n</instructions>\n\n${userPrompt}` : userPrompt;
 
   const started = Date.now();
   let child: ChildProcess;

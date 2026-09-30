@@ -19,6 +19,13 @@ const CLAUDE_BUILTINS: Record<string, string> = {
   cost: 'Chi phí của session này',
 };
 
+/** Antigravity built-ins usable non-interactively (the rest — /model, /config, /skills… — are TUI panels). */
+const AGY_BUILTINS: Record<string, string> = {
+  usage: 'Hạn mức (quota) còn lại của các model',
+  context: 'Ngữ cảnh đang dùng bao nhiêu token',
+  diff: 'Xem thay đổi của các file đã sửa',
+};
+
 /** name + description from a markdown file's frontmatter */
 function frontmatter(file: string): { name?: string; description?: string } {
   try {
@@ -47,8 +54,8 @@ function frontmatter(file: string): { name?: string; description?: string } {
   }
 }
 
-/** skills/<name>/SKILL.md under each dir */
-function scanSkills(dirs: string[]): Map<string, string | undefined> {
+/** skills/<name>/SKILL.md under each dir (`flat`: a plain <name>.md also counts, as in Antigravity) */
+function scanSkills(dirs: string[], flat = false): Map<string, string | undefined> {
   const out = new Map<string, string | undefined>();
   for (const dir of dirs) {
     let entries: fs.Dirent[] = [];
@@ -58,10 +65,11 @@ function scanSkills(dirs: string[]): Map<string, string | undefined> {
       continue;
     }
     for (const e of entries) {
-      const file = path.join(dir, e.name, 'SKILL.md');
+      const isFlat = flat && e.name.endsWith('.md') && !e.isDirectory();
+      const file = isFlat ? path.join(dir, e.name) : path.join(dir, e.name, 'SKILL.md');
       if (!fs.existsSync(file)) continue;
       const fm = frontmatter(file);
-      const name = fm.name || e.name;
+      const name = fm.name || (isFlat ? e.name.slice(0, -3) : e.name);
       if (!out.has(name)) out.set(name, fm.description);
     }
   }
@@ -145,6 +153,22 @@ export async function listSlash(project: string, agent: string): Promise<SlashIt
       else if (init?.slash.includes(name) && !/^(model|skills|help|clear|config|login|logout|resume|exit|theme|vim|terminal-setup|ide|permissions|agents|hooks|mcp|memory|doctor|status|upgrade|bug|release-notes|init|add-dir|export|statusline|output-style|privacy-settings|todos|rewind|usage|plugin|install-github-app|pr-comments|security-review|review|heapdump|insights|feedback|keybindings|fast|effort|btw|voice|mobile|stickers|remote-control|extra-usage|passes|sandbox|tasks)$/.test(name))
         items.push({ name, kind: 'command' });
     }
+  } else if (agent === 'antigravity') {
+    // https://antigravity.google/docs/skills — every skill is also a "/name" command
+    const g = path.join(home, '.gemini');
+    const pluginSkills: string[] = [];
+    try {
+      for (const p of fs.readdirSync(path.join(g, 'antigravity-cli', 'plugins'))) pluginSkills.push(path.join(g, 'antigravity-cli', 'plugins', p, 'skills'));
+    } catch {
+      /* no plugins */
+    }
+    const skills = scanSkills(
+      [path.join(project, '.agents', 'skills'), path.join(g, 'antigravity-cli', 'skills'), path.join(g, 'config', 'skills'), path.join(g, 'antigravity', 'skills'), ...pluginSkills],
+      true,
+    );
+    items = [...skills].map(([name, description]) => ({ name, kind: 'skill' as const, description }));
+    // built-ins that also answer outside the interactive TUI
+    for (const [name, description] of Object.entries(AGY_BUILTINS)) if (!skills.has(name)) items.push({ name, kind: 'builtin', description });
   } else if (agent === 'codex') {
     // Codex picks skills up by name: "$name" (or "/name") in the prompt
     const skills = scanSkills([
@@ -158,4 +182,28 @@ export async function listSlash(project: string, agent: string): Promise<SlashIt
   items.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'skill' ? -1 : b.kind === 'skill' ? 1 : a.kind === 'command' ? -1 : 1));
   cache.set(key, { at: Date.now(), items });
   return items;
+}
+
+/** Path of an Antigravity skill by name (project first, then user/plugin dirs), for spelling out "/name" to agy. */
+export function agySkillFile(project: string, name: string): string | undefined {
+  const g = path.join(os.homedir(), '.gemini');
+  const dirs = [path.join(project, '.agents', 'skills'), path.join(g, 'antigravity-cli', 'skills'), path.join(g, 'config', 'skills'), path.join(g, 'antigravity', 'skills')];
+  try {
+    for (const p of fs.readdirSync(path.join(g, 'antigravity-cli', 'plugins'))) dirs.push(path.join(g, 'antigravity-cli', 'plugins', p, 'skills'));
+  } catch {
+    /* no plugins */
+  }
+  for (const d of dirs) {
+    for (const f of [path.join(d, name, 'SKILL.md'), path.join(d, `${name}.md`)]) if (fs.existsSync(f)) return f;
+    // folder named differently from the skill's `name:`
+    try {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const f = path.join(d, e.name, 'SKILL.md');
+        if (e.isDirectory() && fs.existsSync(f) && frontmatter(f).name === name) return f;
+      }
+    } catch {
+      /* missing dir */
+    }
+  }
+  return undefined;
 }
