@@ -9,6 +9,8 @@ import type { Agent, Pipeline, Role, RunConfig, ServerMessage } from '../shared/
 import { getCatalog, getHealth } from './catalog.ts';
 import { consumeCodexReset, getUsage } from './usage.ts';
 import { listSlash } from './commands.ts';
+import { detectCheckers, runChecks } from './diagnostics.ts';
+import { createPath, deletePath, renamePath, revealPath } from './fileops.ts';
 import { APP_ROOT, applyUpdate, checkUpdate, updateStatus } from './update.ts';
 import { spawn } from 'node:child_process';
 import { GitError, gitBranches, gitCheckout, gitCommit, gitDiffForMessage, gitDiscard, gitFetch, gitInfo, gitInit, gitLog, gitPull, gitPush, gitStage, gitUnstage } from './git.ts';
@@ -311,6 +313,20 @@ export function start(opts: StartOptions): Promise<http.Server> {
       writeFile(project(), b.path, b.content);
       return { ok: true };
     }
+    if (m === 'POST' && p === '/fs/delete') return deletePath(project(), (await body<{ path: string }>(req)).path).then(() => ({ ok: true }));
+    if (m === 'POST' && p === '/fs/rename') {
+      const b = await body<{ from: string; to: string }>(req);
+      renamePath(project(), b.from, b.to);
+      return { ok: true };
+    }
+    if (m === 'POST' && p === '/fs/create') {
+      const b = await body<{ path: string; dir?: boolean }>(req);
+      createPath(project(), b.path, !!b.dir);
+      return { ok: true };
+    }
+    if (m === 'POST' && p === '/fs/reveal') return revealPath(project(), (await body<{ path: string }>(req)).path).then(() => ({ ok: true }));
+    if (m === 'GET' && p === '/checks') return detectCheckers(project());
+    if (m === 'POST' && p === '/checks/run') return runChecks(project(), (await body<{ files?: string[] }>(req)).files);
     if (m === 'GET' && p === '/git/status') return gitStatus(project());
     if (m === 'GET' && p === '/git/repos') return projectRepos(project());
 

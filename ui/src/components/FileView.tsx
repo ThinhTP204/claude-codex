@@ -3,7 +3,7 @@ import Editor, { DiffEditor } from '@monaco-editor/react';
 import { Columns2, RotateCcw, Save } from 'lucide-react';
 import '../monaco.ts';
 import { api, qs } from '../api.ts';
-import { fileKey, safe, toast, useStore } from '../store.ts';
+import { checkAfterSave, fileKey, safe, toast, useStore } from '../store.ts';
 import { FileIcon } from './Explorer.tsx';
 import { Spinner, cx } from './ui.tsx';
 import { useIsDark } from '../theme.ts';
@@ -106,8 +106,39 @@ export function FileView({ path, root, diff: openInDiff, line, nonce }: { path: 
     setSaving(true);
     const ok = await safe(api('PUT', `/fs/write${qs({ project })}`, { path, content: value }));
     setSaving(false);
-    if (ok) setData((d) => d && { ...d, content: value });
+    if (ok) {
+      setData((d) => d && { ...d, content: value });
+      // re-lint just this file (fast checkers only), like VS Code on save
+      if (!root) checkAfterSave(path);
+    }
   };
+
+  // squiggles from the Problems list
+  const diags = useStore((s) => (root ? undefined : s.problems?.diagnostics));
+  const monacoRef = useRef<any>(null);
+  useEffect(() => {
+    const ed = editorRef.current;
+    const m = monacoRef.current;
+    const model = ed?.getModel?.();
+    if (!m || !model) return;
+    const sev = { error: m.MarkerSeverity.Error, warning: m.MarkerSeverity.Warning, info: m.MarkerSeverity.Info };
+    m.editor.setModelMarkers(
+      model,
+      'agentdesk',
+      (diags || [])
+        .filter((d) => d.file === path)
+        .map((d) => ({
+          startLineNumber: d.line,
+          startColumn: d.col,
+          endLineNumber: d.endLine ?? d.line,
+          endColumn: d.endCol ?? (d.endLine ? 1 : d.col + 1),
+          message: d.message,
+          severity: sev[d.severity],
+          source: d.source,
+          code: d.code,
+        })),
+    );
+  }, [diags, path, editorReady]);
 
   if (!data) return <div className="grid h-full place-items-center text-muted"><Spinner /></div>;
   if (data.binary || data.tooLarge)
@@ -176,6 +207,7 @@ export function FileView({ path, root, diff: openInDiff, line, nonce }: { path: 
             onChange={(v) => setValue(v ?? '')}
             onMount={(editor, m) => {
               editorRef.current = editor;
+              monacoRef.current = m;
               setEditorReady((n) => n + 1);
               editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => document.dispatchEvent(new CustomEvent('agentdesk-save', { detail: fileId })));
             }}

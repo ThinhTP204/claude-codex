@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import type { CheckResult } from '../../shared/diagnostics.ts';
 import type { Block, Catalog, Conversation, ConversationSummary, GitInfo, Health, Pipeline, Role, RunConfig, ServerMessage, TermInfo, UsageReport } from '../../shared/types.ts';
 import { disposeTerm, ensureTerm, setLinkHandler, writeTerm } from './terminals.ts';
 import { api, connectWs, qs, TOKEN, URL_PROJECT, wsSend } from './api.ts';
@@ -69,6 +70,13 @@ export interface State {
   composerInsert?: { text: string; n: number };
   /** pipeline runs the user dismissed from the chat view */
   hiddenRuns: string[];
+  /** "Problems": findings of the project's own checkers (tsc, eslint, biome, ruff) */
+  problems?: CheckResult;
+  checking: boolean;
+  /** checkers detected per folder, known before anything runs */
+  checkers: { dir: string; tools: string[] }[];
+  /** what the bottom panel shows */
+  bottomTab: 'terminal' | 'problems';
   /** newer AgentDesk on GitHub (git installs) */
   update?: UpdateInfo;
   showUpdate: boolean;
@@ -135,6 +143,9 @@ let state: State = {
   hiddenRuns: LS.get<string[]>('hiddenRuns', []),
   rightTab: LS.get<'files' | 'scm'>('rightTab', 'files'),
   showUpdate: false,
+  checking: false,
+  checkers: [],
+  bottomTab: LS.get<'terminal' | 'problems'>('bottomTab', 'terminal'),
   terms: [],
 };
 
@@ -322,12 +333,15 @@ export async function openProject(path: string): Promise<void> {
     folders: [],
     rootGit: {},
     repos: [],
+    problems: undefined,
+    checkers: [],
     scmRoot: undefined,
     gitInfo: undefined,
   }));
   wsSend({ type: 'watch', project: r.path });
   void refreshList();
   void loadWorkspace(r.path);
+  void loadCheckers();
   void loadTerms();
   const last = LS.get<string | undefined>(`conv:${r.path}`, undefined);
   if (last) void openConv(last);
@@ -468,7 +482,7 @@ export async function closeTerm(id: string): Promise<void> {
 export function toggleTermPanel(open = !state.termOpen): void {
   LS.set('termOpen', open);
   setState({ termOpen: open });
-  if (open && !state.terms.length) void newTerm();
+  if (open && state.bottomTab === 'terminal' && !state.terms.length) void newTerm();
 }
 
 /** Add (or retarget) the Preview tab for a dev-server URL. */
@@ -495,6 +509,54 @@ export function hideRun(runId: string): void {
 /** Put text into the chat composer and switch to the chat tab. */
 export function insertIntoComposer(text: string): void {
   setState((s) => ({ composerInsert: { text, n: (s.composerInsert?.n || 0) + 1 }, activeTab: 'chat' }));
+}
+
+export async function loadCheckers(): Promise<void> {
+  const project = state.project;
+  if (!project) return;
+  const c = await api<{ dir: string; tools: string[] }[]>('GET', `/checks${qs({ project })}`).catch(() => []);
+  if (project !== state.project) return;
+  setState({ checkers: c });
+  // like VS Code: check once shortly after the project opens (later: on save / after agent runs)
+  if (c.length && !state.problems) setTimeout(() => project === state.project && !state.problems && void runChecks(), 2500);
+}
+
+/** Run the project's checkers: everything, or only the per-file ones on `files` (after a save). */
+export async function runChecks(files?: string[]): Promise<void> {
+  const project = state.project;
+  if (!project || (!files && state.checking)) return;
+  if (!files) setState({ checking: true });
+  const r = await api<CheckResult>('POST', `/checks/run${qs({ project })}`, { files }).catch((e) => {
+    if (!files) toast((e as Error).message);
+    return undefined;
+  });
+  if (project !== state.project) return;
+  if (!files) return setState({ checking: false, ...(r ? { problems: r } : {}) });
+  if (!r || !state.problems) return;
+  // per-file run: replace what the per-file checkers said about those files, keep the rest (e.g. TypeScript)
+  const redone = new Set(r.tools.map((t) => t.name.toLowerCase()));
+  const keep = state.problems.diagnostics.filter((d) => !(files.includes(d.file) && redone.has(d.source === 'ts' ? 'typescript' : d.source)));
+  setState({ problems: { ...state.problems, diagnostics: [...keep, ...r.diagnostics] } });
+}
+
+let fullCheckTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** After a save: lint that file now, and re-run whole-project checkers (TypeScript) once edits settle. */
+export function checkAfterSave(file: string): void {
+  if (!state.checkers.length) return;
+  void runChecks([file]);
+  if (state.problems && state.checkers.some((c) => c.tools.includes('TypeScript'))) {
+    clearTimeout(fullCheckTimer);
+    fullCheckTimer = setTimeout(() => void runChecks(), 1500);
+  }
+}
+
+export function setBottomTab(tab: 'terminal' | 'problems'): void {
+  LS.set('bottomTab', tab);
+  LS.set('termOpen', true);
+  setState({ bottomTab: tab, termOpen: true });
+  if (tab === 'problems' && !state.problems) void runChecks();
+  if (tab === 'terminal' && !state.terms.length) void newTerm();
 }
 
 export async function checkUpdate(force = false): Promise<UpdateInfo | undefined> {
@@ -592,6 +654,8 @@ function trackRunning(c: Conversation): void {
   else if (runningConvs.delete(c.id)) {
     clearTimeout(usageTimer);
     usageTimer = setTimeout(() => void refreshUsage(true), 3000);
+    // the agent probably edited code: re-check if Problems were already in use
+    if (state.problems) setTimeout(() => void runChecks(), 1500);
   }
 }
 let gitTimer: ReturnType<typeof setTimeout> | undefined;

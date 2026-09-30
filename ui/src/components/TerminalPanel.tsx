@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
-import { Eraser, Globe, MessageSquarePlus, Plus, SquareTerminal, Trash2, X } from 'lucide-react';
-import { closeTerm, ensurePreview, insertIntoComposer, newTerm, setState, toast, toggleTermPanel, useStore } from '../store.ts';
+import { Eraser, Globe, ListChecks, MessageSquarePlus, Plus, SquareTerminal, Trash2, X } from 'lucide-react';
+import { closeTerm, ensurePreview, insertIntoComposer, newTerm, setBottomTab, setState, toast, toggleTermPanel, useStore } from '../store.ts';
 import { clearTerm, ensureTerm, fitTerm, focusTerm, retheme, termText } from '../terminals.ts';
 import { useIsDark } from '../theme.ts';
 import { cx } from './ui.tsx';
+import { ProblemsView, useProblemCounts } from './ProblemsView.tsx';
 
 export function TerminalPanel() {
   const terms = useStore((s) => s.terms);
@@ -12,6 +13,8 @@ export function TerminalPanel() {
   const dark = useIsDark();
   const mount = useRef<HTMLDivElement>(null);
   const cur = terms.find((t) => t.id === active);
+  const tab = useStore((s) => s.bottomTab);
+  const counts = useProblemCounts();
 
   // attach the active xterm to the panel
   useEffect(() => {
@@ -49,9 +52,28 @@ export function TerminalPanel() {
   return (
     <div className="flex h-full flex-col bg-term">
       <div className="flex h-8 shrink-0 items-center gap-1 border-b border-line px-2 text-[12px]">
-        <span className="mr-1 flex items-center gap-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
-          <SquareTerminal size={13} /> Terminal
-        </span>
+        {(['terminal', 'problems'] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setBottomTab(k)}
+            className={cx(
+              'relative mr-0.5 flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-[11px] font-semibold uppercase tracking-wider',
+              tab === k ? 'text-fg' : 'text-muted hover:text-fg',
+            )}
+          >
+            {k === 'terminal' ? <SquareTerminal size={13} /> : <ListChecks size={13} />}
+            {k === 'terminal' ? 'Terminal' : 'Problems'}
+            {k === 'problems' && counts.error + counts.warning > 0 && (
+              <span className={cx('rounded-full px-1.5 text-[10.5px] leading-4 text-white', counts.error ? 'bg-err' : 'bg-warn')}>{counts.error + counts.warning}</span>
+            )}
+            {tab === k && <span className="absolute inset-x-1 bottom-0 h-[2px] rounded-full bg-accent" />}
+          </button>
+        ))}
+        {tab === 'problems' ? (
+          <div className="flex-1" />
+        ) : (
+          <>
         <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
           {terms.map((t) => (
             <div
@@ -100,11 +122,18 @@ export function TerminalPanel() {
         <button type="button" onClick={() => active && void closeTerm(active)} title="Tắt terminal này" className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted hover:bg-hover hover:text-err">
           <Trash2 size={13} />
         </button>
+          </>
+        )}
         <button type="button" onClick={() => toggleTermPanel(false)} title="Ẩn panel (⌃`)" className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted hover:bg-hover hover:text-fg">
           <X size={14} />
         </button>
       </div>
-      <div className="relative min-h-0 flex-1 px-2 pt-1">
+      {tab === 'problems' && (
+        <div className="min-h-0 flex-1">
+          <ProblemsView />
+        </div>
+      )}
+      <div className={cx('relative min-h-0 flex-1 px-2 pt-1', tab === 'problems' && 'hidden')}>
         <div ref={mount} className="h-full w-full" />
         {cur && !cur.alive && (
           <div className="absolute bottom-2 right-3 rounded-md bg-hover px-2 py-1 text-[11.5px] text-muted">

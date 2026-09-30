@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { CopyX, Globe, MessageSquare, PanelLeftOpen, PanelRightOpen, SquareTerminal, Workflow, X } from 'lucide-react';
-import { closeTab, closeTabs, LS, newConv, setState, toggleTermPanel, useStore } from './store.ts';
+import { AlertTriangle, CopyX, Globe, XCircle, MessageSquare, PanelLeftOpen, PanelRightOpen, SquareTerminal, Workflow, X } from 'lucide-react';
+import { closeTab, closeTabs, LS, setBottomTab, newConv, setState, toggleTermPanel, useStore } from './store.ts';
 import { TerminalPanel } from './components/TerminalPanel.tsx';
 import { PreviewView } from './components/PreviewView.tsx';
 import { Sidebar } from './components/Sidebar.tsx';
@@ -9,6 +9,7 @@ import { FileIcon } from './components/Explorer.tsx';
 import { RightPanel } from './components/RightPanel.tsx';
 import { RolesDialog } from './components/RolesDialog.tsx';
 import { UpdateDialog } from './components/UpdateDialog.tsx';
+import { useProblemCounts } from './components/ProblemsView.tsx';
 import { FolderBrowser } from './components/FolderBrowser.tsx';
 import { useOpenShortcut } from './components/ProjectMenu.tsx';
 import { cx, Spinner } from './components/ui.tsx';
@@ -79,6 +80,35 @@ function RowResizer({ onDrag }: { onDrag: (dy: number) => void }) {
     >
       <div className="absolute inset-x-0 -top-1 h-2 group-hover:bg-accent/30" />
     </div>
+  );
+}
+
+/** "⊗ 2 ⚠ 5" in the tab bar, like VS Code's status bar: opens the Problems panel. */
+function ProblemsButton() {
+  const checkers = useStore((s) => s.checkers.length);
+  const checking = useStore((s) => s.checking);
+  const checked = useStore((s) => !!s.problems);
+  const c = useProblemCounts();
+  if (!checkers) return null;
+  // not checked yet: don't pretend there are 0 problems
+  if (!checked)
+    return (
+      <button type="button" onClick={() => setBottomTab('problems')} title="Đang kiểm tra lỗi code…" className="mb-1.5 ml-1 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] text-muted hover:bg-hover hover:text-fg">
+        <Spinner size={12} /> Kiểm tra lỗi…
+      </button>
+    );
+  return (
+    <button
+      type="button"
+      onClick={() => setBottomTab('problems')}
+      title="Problems: lỗi từ TypeScript / ESLint / Biome / Ruff của project"
+      className="mb-1.5 ml-1 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] text-muted hover:bg-hover hover:text-fg"
+    >
+      {checking ? <Spinner size={12} /> : <XCircle size={13} className={c.error ? 'text-err' : ''} />}
+      {c.error}
+      <AlertTriangle size={13} className={c.warning ? 'text-warn' : ''} />
+      {c.warning}
+    </button>
   );
 }
 
@@ -278,6 +308,7 @@ export function App() {
               <CopyX size={16} />
             </button>
           )}
+          <ProblemsButton />
           <button
             type="button"
             onClick={() => toggleTermPanel()}
