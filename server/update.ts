@@ -15,6 +15,10 @@ export interface UpdateCheck {
   /** package.json version and date of the running commit, for humans */
   version?: string;
   date?: string;
+  /** installed from a .dmg / setup.exe: updates come from GitHub Releases, not git */
+  packaged?: boolean;
+  /** packaged: the release page to download from */
+  downloadUrl?: string;
   behind: number;
   commits: { hash: string; subject: string; date: string }[];
   checkedAt: number;
@@ -58,7 +62,7 @@ let cached: UpdateCheck | undefined;
 export async function checkUpdate(force = false): Promise<UpdateCheck> {
   if (!force && cached && Date.now() - cached.checkedAt < 10 * 60_000) return cached;
   const base = { behind: 0, commits: [], checkedAt: Date.now() };
-  if (!fs.existsSync(path.join(APP_ROOT, '.git'))) return (cached = { ...base, supported: false, reason: 'Bản này không cài bằng git clone nên không tự cập nhật được.' });
+  if (!fs.existsSync(path.join(APP_ROOT, '.git'))) return (cached = await checkRelease(base));
   const head = await git(['log', '-1', '--format=%h%x09%s%x09%cI']);
   const [commit, subject, date] = head.out.trim().split('\t');
   let version: string | undefined;
@@ -81,6 +85,49 @@ export async function checkUpdate(force = false): Promise<UpdateCheck> {
       return { hash, subject: subj, date };
     });
   return (cached = { ...base, supported: true, commit, subject, version, date, behind: commits.length, commits });
+}
+
+const REPO = 'ThinhTP204/claude-codex';
+
+/** "0.10.2" > "0.9.0" */
+function newer(a: string, b: string): boolean {
+  const pa = a.split('.').map((x) => parseInt(x) || 0);
+  const pb = b.split('.').map((x) => parseInt(x) || 0);
+  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  return false;
+}
+
+/** Packaged app (.dmg / setup.exe): compare with the latest GitHub release. */
+async function checkRelease(base: { behind: number; commits: UpdateCheck['commits']; checkedAt: number }): Promise<UpdateCheck> {
+  let version = '0.0.0';
+  try {
+    version = JSON.parse(fs.readFileSync(path.join(APP_ROOT, 'package.json'), 'utf8')).version;
+  } catch {
+    /* unknown */
+  }
+  const info = { ...base, supported: true, packaged: true, version };
+  try {
+    const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15_000) });
+    if (!r.ok) return { ...info, reason: r.status === 404 ? undefined : `GitHub trả lỗi ${r.status}` };
+    const rel = (await r.json()) as { tag_name: string; name?: string; html_url: string; published_at?: string; body?: string };
+    const latest = rel.tag_name.replace(/^v/, '');
+    if (!newer(latest, version)) return info;
+    // release notes: one change per "- " line
+    const notes = (rel.body || '')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => /^[-*] /.test(l))
+      .map((l, i) => ({ hash: String(i), subject: l.slice(2), date: '' }));
+    return {
+      ...info,
+      behind: Math.max(1, notes.length),
+      commits: notes.length ? notes : [{ hash: rel.tag_name, subject: rel.name || `Phiên bản ${latest}`, date: '' }],
+      downloadUrl: rel.html_url,
+      subject: `Có bản ${latest}`,
+    };
+  } catch (e) {
+    return { ...info, reason: `Không kết nối được GitHub: ${(e as Error).message}` };
+  }
 }
 
 let job: UpdateJob = { phase: 'idle', log: '' };

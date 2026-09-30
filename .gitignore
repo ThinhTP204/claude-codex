@@ -4,3 +4,4 @@ dist
 # local tooling config
 .claude/
 dist.next
+release

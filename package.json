@@ -1,6 +1,6 @@
 {
   "name": "agentdesk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "author": "ThinhTP204",
   "private": true,
@@ -16,7 +16,9 @@
     "dev": "node bin/dev.js",
     "build": "vite build",
     "start": "node bin/agentdesk.js",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "package:mac": "bash scripts/package-mac.sh",
+    "package:win": "powershell -ExecutionPolicy Bypass -File scripts/package-win.ps1"
   },
   "dependencies": {
     "ws": "^8.22.0"

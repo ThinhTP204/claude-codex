@@ -166,7 +166,9 @@ export function UpdateDialog() {
                   </ul>
                   {u.busy && <div className="rounded-lg bg-warn/10 px-3 py-2">Đang có agent chạy. Cập nhật sẽ dừng nó, nên đợi chạy xong đã.</div>}
                   <div className="text-[12px] text-faint">
-                    App sẽ tự chạy git pull → npm install (nếu cần) → build → khởi động lại. Terminal đang mở sẽ bị đóng. Build lỗi thì app vẫn giữ bản cũ.
+                    {u.packaged
+                      ? 'Bấm Tải bản mới để mở trang tải trên GitHub, cài đè lên bản đang dùng (dữ liệu và cài đặt giữ nguyên).'
+                      : 'App sẽ tự chạy git pull → npm install (nếu cần) → build → khởi động lại. Terminal đang mở sẽ bị đóng. Build lỗi thì app vẫn giữ bản cũ.'}
                   </div>
                 </>
               )}
@@ -213,7 +215,16 @@ export function UpdateDialog() {
           <button type="button" onClick={check} disabled={running || checking} className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-[13px] hover:bg-hover disabled:opacity-40">
             <RefreshCw size={13} className={cx(checking && 'animate-spin')} /> Kiểm tra lại
           </button>
-          {(phase === 'idle' || phase === 'error') && !!u?.behind && (
+          {u?.packaged && !!u.behind && (
+            <button
+              type="button"
+              onClick={() => void api('POST', '/update/download').catch((e) => toast((e as Error).message))}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-white hover:opacity-90"
+            >
+              <ArrowUpCircle size={14} /> Tải bản mới
+            </button>
+          )}
+          {!u?.packaged && (phase === 'idle' || phase === 'error') && !!u?.behind && (
             <button type="button" onClick={apply} className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-white hover:opacity-90">
               <ArrowUpCircle size={14} /> {phase === 'error' ? 'Thử lại' : 'Cập nhật & khởi động lại'}
             </button>

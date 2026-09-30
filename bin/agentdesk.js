@@ -13,6 +13,18 @@ if (major < 23 || (major === 23 && minor < 6)) {
 }
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+// Opened from Finder / the Dock (packaged AgentDesk.app): macOS hands GUI apps a bare PATH, so
+// claude / codex / git installed with Homebrew, nvm, npm -g… would not be found. Borrow the PATH
+// the user's login shell builds, plus the usual install locations.
+if (process.env.AGENTDESK_PACKAGED === '1' && process.platform !== 'win32') {
+  const home = os.homedir();
+  const shell = process.env.SHELL || '/bin/zsh';
+  const r = spawnSync(shell, ['-ilc', 'printf "__AGENTDESK_PATH__%s__AGENTDESK_PATH__" "$PATH"'], { encoding: 'utf8', timeout: 8000 });
+  const fromShell = /__AGENTDESK_PATH__(.*?)__AGENTDESK_PATH__/.exec(r.stdout || '')?.[1] || '';
+  const usual = ['/opt/homebrew/bin', '/usr/local/bin', `${home}/.local/bin`, `${home}/.npm-global/bin`, `${home}/.bun/bin`, `${home}/.volta/bin`, `${home}/.cargo/bin`];
+  process.env.PATH = [...new Set([...fromShell.split(':'), ...(process.env.PATH || '').split(':'), ...usual])].filter(Boolean).join(':');
+}
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
 const opt = (name) => {

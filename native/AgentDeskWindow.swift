@@ -1,6 +1,8 @@
 // Minimal native macOS window for AgentDesk: a WKWebView pointed at the local server.
 // Built on first launch by bin/agentdesk.js:  swiftc -O native/AgentDeskWindow.swift -o ~/.agentdesk/bin/AgentDeskWindow
-// Usage: AgentDeskWindow <url>
+// Usage: AgentDeskWindow <url>        (started by `agentdesk`, the server already runs)
+//        AgentDesk.app                 (packaged: starts the bundled server itself, see scripts/package-mac.sh)
+//        AgentDeskWindow --export-iconset <dir>   (PNG sizes for iconutil)
 import AppKit
 import WebKit
 
@@ -8,9 +10,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
     var window: NSWindow!
     var webView: WKWebView!
     var titleObservation: NSKeyValueObservation?
-    let url: URL
+    let url: URL?
+    /** the bundled Node server, when running as AgentDesk.app */
+    var server: Process?
 
-    init(url: URL) {
+    init(url: URL?) {
         self.url = url
     }
 
@@ -41,11 +45,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         titleObservation = webView.observe(\.title, options: [.new]) { [weak self] wv, _ in
             if let t = wv.title, !t.isEmpty { self?.window.title = t }
         }
-        webView.load(URLRequest(url: url))
+        if let url { webView.load(URLRequest(url: url)) } else { startBundledServer() }
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        server?.terminate()
+    }
+
+    // MARK: packaged app: Contents/Resources/{node, app/bin/agentdesk.js}
+    func startBundledServer() {
+        showMessage("Đang khởi động AgentDesk…", detail: "")
+        guard let res = Bundle.main.resourceURL else { return }
+        let node = res.appendingPathComponent("node")
+        let script = res.appendingPathComponent("app/bin/agentdesk.js")
+        let p = Process()
+        p.executableURL = node
+        p.arguments = [script.path, "--no-open"]
+        p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+        var env = ProcessInfo.processInfo.environment
+        env["AGENTDESK_PACKAGED"] = "1"
+        p.environment = env
+        let out = Pipe()
+        p.standardOutput = out
+        p.standardError = out
+        var log = ""
+        out.fileHandleForReading.readabilityHandler = { [weak self] h in
+            let data = h.availableData
+            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
+            log = String((log + text).suffix(4000))
+            // the launcher prints "AgentDesk đang chạy: <url>" once the server listens
+            if let r = text.range(of: #"https?://\S+"#, options: .regularExpression), text.contains("AgentDesk") {
+                let u = URL(string: String(text[r]))
+                DispatchQueue.main.async { if let u { self?.webView.load(URLRequest(url: u)) } }
+            }
+        }
+        p.terminationHandler = { [weak self] proc in
+            DispatchQueue.main.async {
+                guard NSApp.isRunning else { return }
+                self?.showMessage("AgentDesk đã dừng (mã \(proc.terminationStatus)).", detail: log)
+            }
+        }
+        do {
+            try p.run()
+            server = p
+        } catch {
+            showMessage("Không khởi động được server.", detail: error.localizedDescription)
+        }
+    }
+
+    func showMessage(_ title: String, detail: String) {
+        let esc = { (s: String) in s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;") }
+        let html = """
+        <html><body style="font:14px -apple-system;color:#8a8778;background:#1f1e1c;display:grid;place-items:center;height:100vh;margin:0">
+        <div style="max-width:680px;text-align:center"><div style="font-size:16px;color:#e8e6e1">\(esc(title))</div>
+        <pre style="text-align:left;white-space:pre-wrap;font:11px Menlo;margin-top:14px">\(esc(detail))</pre></div></body></html>
+        """
+        webView.loadHTMLString(html, baseURL: nil)
+    }
 
     // MARK: menus (the Edit menu is what makes ⌘C / ⌘V / ⌘A work inside the web view)
     func buildMenu() {
@@ -105,7 +164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
 
     // MARK: links: anything leaving the local server opens in the default browser
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        if let u = action.request.url, let host = u.host, host != url.host, u.scheme?.hasPrefix("http") == true {
+        if let u = action.request.url, let host = u.host, !["localhost", "127.0.0.1", "::1"].contains(host), u.scheme?.hasPrefix("http") == true {
             NSWorkspace.shared.open(u)
             decisionHandler(.cancel)
             return
@@ -180,10 +239,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
     }
 }
 
-guard CommandLine.arguments.count > 1, let url = URL(string: CommandLine.arguments[1]) else {
-    FileHandle.standardError.write("usage: AgentDeskWindow <url>\n".data(using: .utf8)!)
-    exit(2)
+let args = CommandLine.arguments
+if args.count > 2, args[1] == "--export-iconset" {
+    // PNGs for `iconutil -c icns` (scripts/package-mac.sh)
+    let dir = URL(fileURLWithPath: args[2])
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let icon = AppDelegate.makeIcon()
+    for (px, name) in [(16, "16x16"), (32, "16x16@2x"), (32, "32x32"), (64, "32x32@2x"), (128, "128x128"), (256, "128x128@2x"),
+                       (256, "256x256"), (512, "256x256@2x"), (512, "512x512"), (1024, "512x512@2x")] {
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px, bitsPerSample: 8, samplesPerPixel: 4,
+                                   hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        icon.draw(in: NSRect(x: 0, y: 0, width: px, height: px))
+        NSGraphicsContext.restoreGraphicsState()
+        try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent("icon_\(name).png"))
+    }
+    exit(0)
 }
+// no URL: running as AgentDesk.app, start the bundled server
+let url = args.count > 1 ? URL(string: args[1]) : nil
 
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)

@@ -295,6 +295,14 @@ export function start(opts: StartOptions): Promise<http.Server> {
     // ---- self-update (git installs) ----
     if (m === 'GET' && p === '/update/check') return { ...(await checkUpdate(q('force') === '1')), canRestart: canRelaunch(), busy: anyRunning() };
     if (m === 'GET' && p === '/update/status') return updateStatus();
+    if (m === 'POST' && p === '/update/download') {
+      // packaged app: open the release page in the default browser
+      const u = (await checkUpdate()).downloadUrl;
+      if (!u) throw new HttpError(400, 'Không có bản mới để tải');
+      const [cmd, args] = process.platform === 'darwin' ? ['open', [u]] : process.platform === 'win32' ? ['rundll32', ['url.dll,FileProtocolHandler', u]] : ['xdg-open', [u]];
+      spawn(cmd as string, args as string[], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+      return { ok: true };
+    }
     if (m === 'POST' && p === '/update/apply') {
       if (anyRunning()) throw new HttpError(409, 'Đang có agent chạy. Đợi chạy xong (hoặc bấm dừng) rồi cập nhật.');
       await applyUpdate(canRelaunch() ? relaunch : () => undefined);

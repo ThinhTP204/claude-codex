@@ -32,7 +32,26 @@ Giao diện gồm ba cột:
 - **Theme** sáng / tối / theo hệ thống.
 - **Chạy bằng một lệnh.** Trên macOS app mở thành cửa sổ native riêng. Đóng cửa sổ là app tắt.
 
-## Yêu cầu
+## Tải bản cài (không cần Node hay git)
+
+Vào trang **[Releases](https://github.com/ThinhTP204/claude-codex/releases/latest)** và tải:
+
+| Máy | File | Cách cài |
+|---|---|---|
+| macOS (Apple Silicon) | `AgentDesk-<phiên bản>-mac-arm64.dmg` | Mở file, kéo **AgentDesk** vào **Applications** |
+| Windows 10/11 | `AgentDesk-<phiên bản>-win-x64-setup.exe` | Chạy file cài (không cần quyền admin). Hoặc tải bản `.zip`, giải nén rồi chạy `AgentDesk.exe` |
+
+Bản cài đã có sẵn Node bên trong. Máy vẫn cần cài và đăng nhập **Claude Code CLI / Codex CLI / Antigravity CLI** (dùng CLI nào thì cài CLI đó), app gọi đúng các CLI trên máy bạn.
+
+**Lần đầu mở** (app chưa được ký bằng chứng chỉ trả phí):
+- **macOS**: nếu báo không mở được, vào **System Settings → Privacy & Security**, kéo xuống bấm **Open Anyway**. Hoặc chạy `xattr -dr com.apple.quarantine /Applications/AgentDesk.app` trong Terminal.
+- **Windows**: SmartScreen báo "Windows protected your PC" → bấm **More info → Run anyway**.
+
+Bản cài báo có bản mới ở mục **Cập nhật** cuối sidebar; bấm **Tải bản mới** rồi cài đè, dữ liệu giữ nguyên (trong `~/.agentdesk`).
+
+**Ra bản mới (cho người phát triển):** tăng `version` trong `package.json`, commit, rồi đẩy tag cùng số, vd `git tag v0.2.0 && git push origin v0.2.0`. GitHub Actions tự build `.dmg` + `.exe` và tạo Release. Build tay: `npm run package:mac` (trên Mac) hoặc `npm run package:win` (trên Windows, cần Inno Setup để ra file cài).
+
+## Yêu cầu (khi chạy từ mã nguồn)
 
 | Cần có | Ghi chú |
 |---|---|
