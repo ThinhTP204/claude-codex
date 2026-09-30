@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Agent, Block, Conversation, ConversationSummary, RunConfig, ServerMessage, Turn } from '../shared/types.ts';
-import { CONV_DIR, readJson, uid, writeJson } from './store.ts';
+import { CONV_DIR, dataFile, readJson, uid, writeJson } from './store.ts';
 import { startRun, type RunHandle, type RunResult } from './runner.ts';
 import { listNativeSessions, nativeTurns } from './sessions.ts';
 
@@ -137,7 +137,7 @@ export function summary(c: Conversation): ConversationSummary {
 export function listConvs(projectPath: string): ConversationSummary[] {
   const mine = [...index.values()].filter((e) => e.projectPath === projectPath && e.hasContent);
   const known = new Set(mine.flatMap((e) => e.sessionIds));
-  const native = listNativeSessions(projectPath).filter((s) => !known.has(s.sessionId));
+  const native = listNativeSessions(projectPath).filter((s) => !known.has(s.sessionId) && !hidden.has(s.sessionId));
   return [
     ...mine.map(({ projectPath: _p, sessionIds: _s, hasContent: _h, ...e }) => ({ ...e, running: active.has(e.id) })),
     ...native.map(({ file: _f, sessionId: _s, ...rest }) => rest),
@@ -196,8 +196,22 @@ export function getConv(id: string, projectPath?: string): Conversation | undefi
   return c;
 }
 
+// Native CLI sessions the user deleted in AgentDesk. We only hide them: the files under
+// ~/.claude and ~/.codex belong to those CLIs (still reachable with `claude --resume`).
+const HIDDEN_FILE = dataFile('hidden-sessions.json');
+const hidden = new Set(readJson<string[]>(HIDDEN_FILE, []));
+
+function hideSessions(ids: string[]): void {
+  const before = hidden.size;
+  for (const s of ids) if (s) hidden.add(s);
+  if (hidden.size !== before) writeJson(HIDDEN_FILE, [...hidden].slice(-5000));
+}
+
 export function deleteConv(id: string): void {
   const e = index.get(id);
+  // otherwise the underlying CLI session would pop back into the list as a "native" entry
+  const native = /^(claude|codex|antigravity):(.+)$/.exec(id)?.[2];
+  hideSessions([...(e?.sessionIds || []), ...Object.values(loadConv(id)?.sessions || {}), ...(native ? [native] : [])]);
   active.get(id)?.stop();
   clearTimeout(saveTimers.get(id));
   saveTimers.delete(id);

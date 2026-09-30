@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowUp, Check, ChevronRight, FolderOpen, Pause, Pencil, Play, RotateCcw, Square, ThumbsDown, ThumbsUp, Workflow, X } from 'lucide-react';
-import type { Conversation, NodeRunState, PipelineRun, RunConfig } from '../../../shared/types.ts';
+import type { Agent, Conversation, NodeRunState, PipelineRun, RunConfig } from '../../../shared/types.ts';
 import { convAction, ensureConv, getState, hideRun, pickProject, safe, sendMessage, setComposer, setState, toast, useStore } from '../store.ts';
 import { api, qs } from '../api.ts';
 import { ConfigPicker } from './ConfigPicker.tsx';
@@ -9,7 +9,7 @@ import { AttachButton, AttachmentChip } from './Attachments.tsx';
 import { type Attachment, REF_MIME, isImage, uploadFile, withAttachments } from '../attachments.ts';
 import { ProjectChip } from './ProjectMenu.tsx';
 import { TurnView, Markdown } from './Message.tsx';
-import { AgentIcon, Popover, Spinner, cx, fmtDuration, fmtUsage, inputCls, modelLabel } from './ui.tsx';
+import { AGENT_NAME, AgentIcon, EFFORT_LABEL, Popover, Spinner, cx, fmtDuration, fmtTokens, fmtUsage, inputCls, modelLabel } from './ui.tsx';
 
 export function ChatView() {
   const project = useStore((s) => s.project);
@@ -112,88 +112,162 @@ function Welcome() {
   );
 }
 
-const STATUS_STYLE: Record<NodeRunState['status'], string> = {
-  idle: 'border-line text-faint',
-  running: 'border-accent text-fg bg-accent/10',
-  awaiting: 'border-warn text-fg bg-warn/10',
-  done: 'border-ok/50 text-fg',
-  error: 'border-err text-err bg-err/5',
-  stopped: 'border-line-strong text-muted',
-};
-
-function StatusIcon({ st }: { st: NodeRunState }) {
+/** Round status dot of a pipeline step. */
+function StepDot({ st }: { st: NodeRunState }) {
+  const base = 'grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full';
   switch (st.status) {
     case 'running':
-      return <Spinner size={12} className="text-accent" />;
+      return (
+        <span className={cx(base, 'bg-accent/15 text-accent')}>
+          <Spinner size={11} />
+        </span>
+      );
     case 'awaiting':
-      return <Pause size={12} className="text-warn" />;
+      return (
+        <span className={cx(base, 'relative bg-warn text-white')}>
+          <span className="absolute inset-0 animate-ping rounded-full bg-warn/40" />
+          <Pause size={9} fill="currentColor" strokeWidth={0} className="relative" />
+        </span>
+      );
     case 'done':
-      return st.verdict === 'fail' ? <ThumbsDown size={12} className="text-err" /> : <Check size={12} className="text-ok" />;
+      return st.verdict === 'fail' ? (
+        <span className={cx(base, 'bg-err text-white')}>
+          <X size={11} strokeWidth={3} />
+        </span>
+      ) : (
+        <span className={cx(base, 'bg-ok text-white')}>
+          <Check size={11} strokeWidth={3} />
+        </span>
+      );
     case 'error':
-      return <X size={12} className="text-err" />;
+      return (
+        <span className={cx(base, 'bg-err text-white')}>
+          <X size={11} strokeWidth={3} />
+        </span>
+      );
     case 'stopped':
-      return <Square size={10} />;
+      return (
+        <span className={cx(base, 'border border-line-strong text-muted')}>
+          <Square size={7} fill="currentColor" />
+        </span>
+      );
     default:
-      return <span className="block h-2 w-2 rounded-full border border-current" />;
+      return <span className={cx(base, 'border-[1.5px] border-line-strong')} />;
   }
 }
 
+const RUN_BADGE: Record<PipelineRun['status'], [string, string]> = {
+  running: ['Đang chạy', 'bg-accent/12 text-accent'],
+  awaiting: ['Chờ duyệt', 'bg-warn/15 text-warn'],
+  done: ['Hoàn thành', 'bg-ok/15 text-ok'],
+  error: ['Lỗi', 'bg-err/15 text-err'],
+  stopped: ['Đã dừng', 'bg-hover text-muted'],
+};
+
+/** Pipeline progress above the chat: a compact stepper, details on hover, actions on the right. */
 function RunBar({ run }: { run: PipelineRun }) {
   const catalog = useStore((s) => s.catalog);
   const agents = run.pipeline.nodes.filter((n) => n.type === 'agent');
-  const label =
-    run.status === 'running' ? 'Đang chạy' : run.status === 'awaiting' ? 'Chờ duyệt' : run.status === 'done' ? 'Hoàn thành' : run.status === 'error' ? 'Lỗi' : 'Đã dừng';
+  const [label, badge] = RUN_BADGE[run.status];
   const total = agents.reduce((a, n) => a + (run.nodes[n.id]?.usage?.inputTokens || 0) + (run.nodes[n.id]?.usage?.outputTokens || 0), 0);
   const current = run.current ? run.pipeline.nodes.find((n) => n.id === run.current) : undefined;
+  const doneCount = agents.filter((n) => run.nodes[n.id]?.status === 'done' && run.nodes[n.id]?.verdict !== 'fail').length;
+  const progress = run.status === 'done' ? 1 : agents.length ? doneCount / agents.length : 0;
+  const short = (agent: string, model: string) => modelLabel(catalog, agent as Agent, model).replace(/\s*\(mới nhất\)$/, '');
+  const scroller = useRef<HTMLDivElement>(null);
+  // keep the active step in view when the bar is narrow
+  useEffect(() => {
+    scroller.current?.querySelector('[data-current="true"]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }, [run.current, run.status]);
+
   return (
-    <div className="flex items-center gap-2 border-b border-line bg-panel/60 px-4 py-2 text-[12.5px]">
-      <button type="button" onClick={() => setState({ activeTab: 'flow' })} className="flex shrink-0 items-center gap-1.5 font-medium hover:text-accent" title="Xem sơ đồ">
-        <Workflow size={14} className="text-accent" />
-        {run.pipeline.name}
+    <div className="@container relative shrink-0 border-b border-line bg-panel/70 backdrop-blur">
+    <div className="flex h-11 items-center gap-3 px-4 text-[12.5px]">
+      <button type="button" onClick={() => setState({ activeTab: 'flow' })} className="flex min-w-0 max-w-[30%] shrink-0 items-center gap-1.5 text-muted hover:text-fg" title={`${run.pipeline.name} · xem sơ đồ`}>
+        <Workflow size={14} className="shrink-0 text-accent" />
+        <span className="hidden truncate font-medium @3xl:inline">{run.pipeline.name}</span>
       </button>
-      <span className={cx('shrink-0 rounded-full px-2 py-px text-[11px] font-medium', run.status === 'done' ? 'bg-ok/15 text-ok' : run.status === 'error' ? 'bg-err/15 text-err' : run.status === 'awaiting' ? 'bg-warn/15 text-warn' : 'bg-accent/15 text-accent')}>
-        {label}
-      </span>
-      {/* steps scroll horizontally; the action buttons keep their own space on the right */}
-      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
-        {agents.map((n, i) => {
-          const st = run.nodes[n.id] || { status: 'idle', runs: 0 };
-          const cfg = n.data.config;
-          return (
-            <div key={n.id} className="flex shrink-0 items-center gap-1">
-              {i > 0 && <ChevronRight size={12} className="text-faint" />}
-              <span className={cx('inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5', STATUS_STYLE[st.status], run.current === n.id && 'ring-1 ring-offset-0 ring-current')} title={cfg ? `${cfg.agent} · ${cfg.model}` : ''}>
-                <StatusIcon st={st} />
-                {cfg && <AgentIcon agent={cfg.agent} size={11} />}
-                <span>{n.data.label}</span>
-                {cfg && <span className="text-faint">{modelLabel(catalog, cfg.agent, cfg.model)}</span>}
-                {st.runs > 1 && <span className="text-faint" title={`Lần chạy thứ ${st.runs}: bước sau chấm chưa đạt nên gửi lại bước này làm lại`}>lần {st.runs}</span>}
-              </span>
-            </div>
-          );
-        })}
+      <span className={cx('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold', badge)}>{label}</span>
+
+      <div ref={scroller} className="flex min-w-0 flex-1 items-center overflow-x-auto [mask-image:linear-gradient(to_right,transparent,black_12px,black_calc(100%-12px),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="mx-auto flex items-center px-3">
+          {agents.map((n, i) => {
+            const st = run.nodes[n.id] || { status: 'idle' as const, runs: 0 };
+            const cfg = n.data.config;
+            const isCurrent = run.current === n.id && run.status !== 'done';
+            const prevDone = i > 0 && run.nodes[agents[i - 1].id]?.status === 'done';
+            const tip = [
+              n.data.label,
+              cfg && `${AGENT_NAME[cfg.agent]} · ${short(cfg.agent, cfg.model)}${cfg.effort ? ` · ${EFFORT_LABEL[cfg.effort] || cfg.effort}` : ''}`,
+              st.runs > 1 && `Đã chạy ${st.runs} lần (bước sau chấm chưa đạt nên làm lại)`,
+              st.usage && fmtUsage(st.usage),
+            ]
+              .filter(Boolean)
+              .join('\n');
+            return (
+              <div key={n.id} className="flex shrink-0 items-center">
+                {i > 0 && <span className={cx('mx-1 h-px w-3 shrink-0 rounded-full @xl:mx-1.5 @xl:w-6', prevDone ? 'bg-ok/60' : 'bg-line-strong/70')} />}
+                <span
+                  data-current={isCurrent}
+                  title={tip}
+                  className={cx(
+                    'inline-flex items-center gap-1.5 rounded-full py-0.5 pl-0.5 pr-2 transition-colors',
+                    isCurrent ? (st.status === 'awaiting' ? 'bg-warn/10 ring-1 ring-warn/40' : 'bg-accent/10 ring-1 ring-accent/30') : '',
+                  )}
+                >
+                  <StepDot st={st} />
+                  <span className={cx('whitespace-nowrap', isCurrent ? 'font-semibold text-fg' : st.status === 'idle' ? 'text-faint' : 'text-fg/80')}>{n.data.label}</span>
+                  {isCurrent && cfg && (
+                    <span className="hidden items-center gap-1 whitespace-nowrap text-[11.5px] text-muted @xl:inline-flex">
+                      <AgentIcon agent={cfg.agent} size={11} />
+                      {short(cfg.agent, cfg.model)}
+                    </span>
+                  )}
+                  {st.runs > 1 && <span className="rounded-full bg-hover px-1.5 text-[10.5px] font-semibold leading-4 text-muted">×{st.runs}</span>}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
-      {total > 0 && <span className="shrink-0 text-[11px] text-faint">Σ {Math.round(total / 1000)}k token</span>}
-      {run.status === 'running' && (
-        <button type="button" onClick={() => convAction('run-stop')} className="shrink-0 rounded-md border border-line px-2 py-0.5 hover:bg-hover">
-          Dừng
-        </button>
-      )}
-      {run.status === 'stopped' && current && (
-        <button
-          type="button"
-          onClick={() => convAction('rerun', {})}
-          title="Chạy lại bước đang dở rồi đi tiếp như bình thường"
-          className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-accent/50 px-2 py-0.5 text-accent hover:bg-accent/10"
-        >
-          <RotateCcw size={12} /> Chạy tiếp từ bước {current.data.label}
-        </button>
-      )}
-      {(run.status === 'stopped' || run.status === 'done' || run.status === 'error') && (
-        <button type="button" onClick={() => hideRun(run.id)} title="Ẩn thanh pipeline (vẫn xem được ở tab Flow)" className="shrink-0 rounded-md p-1 text-muted hover:bg-hover hover:text-fg">
-          <X size={13} />
-        </button>
-      )}
+
+      <div className="flex shrink-0 items-center gap-2">
+        {total > 0 && (
+          <span className="whitespace-nowrap text-[11.5px] tabular-nums text-faint" title={`${total.toLocaleString('vi-VN')} token (vào + ra) của cả pipeline`}>
+            {fmtTokens(total).replace('.', ',')}
+            <span className="hidden @lg:inline"> token</span>
+          </span>
+        )}
+        {run.status === 'running' && (
+          <button type="button" onClick={() => convAction('run-stop')} className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-0.5 hover:border-err/50 hover:text-err">
+            <Square size={9} fill="currentColor" /> Dừng
+          </button>
+        )}
+        {run.status === 'stopped' && current && (
+          <button
+            type="button"
+            onClick={() => convAction('rerun', {})}
+            title="Chạy lại bước đang dở rồi đi tiếp như bình thường"
+            className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-accent/50 px-2 py-0.5 text-accent hover:bg-accent/10"
+          >
+            <RotateCcw size={12} /> Chạy tiếp từ {current.data.label}
+          </button>
+        )}
+        {(run.status === 'stopped' || run.status === 'done' || run.status === 'error') && (
+          <button type="button" onClick={() => hideRun(run.id)} title="Ẩn thanh pipeline (vẫn xem được ở tab Flow)" className="rounded-md p-1 text-muted hover:bg-hover hover:text-fg">
+            <X size={13} />
+          </button>
+        )}
+      </div>
+
+      {/* thin progress line along the bottom edge */}
+      <span className="pointer-events-none absolute inset-x-0 -bottom-px h-[2px] bg-transparent">
+        <span
+          className={cx('block h-full rounded-r-full transition-[width] duration-500', run.status === 'error' ? 'bg-err' : run.status === 'awaiting' ? 'bg-warn' : run.status === 'done' ? 'bg-ok' : 'bg-accent')}
+          style={{ width: `${Math.max(progress, run.status === 'running' ? 0.04 : 0) * 100}%` }}
+        />
+      </span>
+    </div>
     </div>
   );
 }
