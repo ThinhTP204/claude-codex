@@ -292,7 +292,8 @@ export async function executeTurn(c: Conversation, o: TurnOptions): Promise<{ tu
     status: 'done',
   };
   c.turns.push(userTurn);
-  if (c.title === NEW_TITLE) c.title = (o.display ?? o.prompt).replace(/\s+/g, ' ').slice(0, 80);
+  // title: the typed text, without the "📎 Đính kèm:" list the composer appends
+  if (c.title === NEW_TITLE) c.title = (o.display ?? o.prompt).split('\n\n📎 ')[0].replace(/\s+/g, ' ').slice(0, 80) || NEW_TITLE;
 
   const attempt = async (): Promise<{ turn: Turn; result: RunResult }> => {
     if (!c.sessions[agent]) c.seen[agent] = 0;

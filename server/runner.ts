@@ -4,6 +4,8 @@ import type { Block, RunConfig, Usage } from '../shared/types.ts';
 import { killTree, resolveCommand, spawnOpts } from './platform.ts';
 import { noteClaudeModel } from './catalog.ts';
 import { workspaceFolders } from './projects.ts';
+import { ATTACH_DIR } from './store.ts';
+import fs from 'node:fs';
 
 export interface RunEvents {
   onSession(id: string, model?: string): void;
@@ -55,7 +57,19 @@ export function claudeArgs(cfg: RunConfig, resume?: string): string[] {
   return a;
 }
 
-export function codexArgs(cfg: RunConfig, resume?: string): string[] {
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
+
+/** Images attached in this message (codex only sees pixels through --image). */
+function attachedImages(prompt: string): string[] {
+  const out: string[] = [];
+  for (const line of prompt.split('\n')) {
+    const p = line.replace(/^- /, '').trim();
+    if (p.startsWith(ATTACH_DIR) && IMAGE_EXT.test(p) && fs.existsSync(p)) out.push(p);
+  }
+  return [...new Set(out)];
+}
+
+export function codexArgs(cfg: RunConfig, resume?: string, images: string[] = []): string[] {
   const a = ['exec'];
   if (resume) a.push('resume', resume);
   a.push('--json', '--skip-git-repo-check', '-m', cfg.model);
@@ -69,6 +83,8 @@ export function codexArgs(cfg: RunConfig, resume?: string): string[] {
     a.push('-c', `sandbox_mode="${sandbox}"`);
   }
   if (!resume) for (const d of cfg.addDirs || []) a.push('--add-dir', d);
+  // "--image=x" (one value each) so the trailing "-" is not taken as another image
+  for (const img of images) a.push(`--image=${img}`);
   a.push('-'); // prompt from stdin
   return a;
 }
@@ -106,11 +122,13 @@ export function summarizeToolInput(name: string, input: Record<string, unknown>)
 export function startRun(cfg: RunConfig, prompt: string, cwd: string, resume: string | undefined, ev: RunEvents): RunHandle {
   // folders in the project's workspace are reachable by the agent too
   const extra = workspaceFolders(cwd);
+  // files dropped into the chat live in ATTACH_DIR: let the agent read them
+  if (prompt.includes(ATTACH_DIR)) extra.push(ATTACH_DIR);
   if (extra.length) cfg = { ...cfg, addDirs: [...new Set([...(cfg.addDirs || []), ...extra])] };
   const isClaude = cfg.agent === 'claude';
   const isAgy = cfg.agent === 'antigravity';
   const bin = isClaude ? 'claude' : isAgy ? 'agy' : 'codex';
-  const args = isClaude ? claudeArgs(cfg, resume) : isAgy ? agyArgs(cfg, resume) : codexArgs(cfg, resume);
+  const args = isClaude ? claudeArgs(cfg, resume) : isAgy ? agyArgs(cfg, resume) : codexArgs(cfg, resume, attachedImages(prompt));
   const fullPrompt = !isClaude && cfg.systemPrompt?.trim() ? `<instructions>\n${cfg.systemPrompt}\n</instructions>\n\n${prompt}` : prompt;
 
   const started = Date.now();

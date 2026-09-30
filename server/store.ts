@@ -6,6 +6,8 @@ import crypto from 'node:crypto';
 export const HOME = os.homedir();
 export const DATA_DIR = process.env.AGENTDESK_HOME || path.join(HOME, '.agentdesk');
 export const CONV_DIR = path.join(DATA_DIR, 'conversations');
+/** files dropped/pasted into the chat; agents are given read access to this folder */
+export const ATTACH_DIR = path.join(DATA_DIR, 'attachments');
 
 fs.mkdirSync(CONV_DIR, { recursive: true });
 

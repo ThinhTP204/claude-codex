@@ -99,6 +99,7 @@ Bấm ô **PROJECT → Đổi** ở góc trên sidebar trái, hoặc nhấn **�
    - **Quyền:** Chỉ đọc / Sửa file / Sửa + chạy lệnh / Toàn quyền (xem bảng bên dưới).
    - **⚙ Nâng cao:** fast mode (Codex), model dự phòng, giới hạn chi phí mỗi lượt, system prompt, thư mục bổ sung, bật/tắt MCP.
 2. Gõ yêu cầu rồi nhấn **Enter**. **Shift+Enter** để xuống dòng.
+   - **Đính kèm file:** kéo file từ Finder/Explorer của máy vào khung chat, dán ảnh bằng **⌘V** (ảnh chụp màn hình), bấm nút 📎, hoặc kéo file từ Explorer bên phải vào. Agent tự mở file theo đường dẫn; Codex nhận ảnh trực tiếp. File tải lên được lưu trong `~/.agentdesk/attachments`.
 3. Mỗi câu trả lời có header ghi rõ `Claude · Sonnet 5 · Medium · Code`, kèm các tool call (bấm để xem input/output), phần suy nghĩ, thời gian và số token.
 4. **Đổi agent giữa chừng:** ví dụ hỏi Claude trước rồi chuyển sang Codex. Codex tự nhận những gì Claude đã làm.
 

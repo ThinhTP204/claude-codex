@@ -25,7 +25,7 @@ import {
 import { approve, rerun, startPipeline, stopPipeline } from './pipeline.ts';
 import { deletePipeline, getPipelines, getRoles, savePipeline, saveRoles, DEFAULT_ROLES } from './roles.ts';
 import { browseDirs, resolveFileRef, forgetProject, setWorkspaceFolders, workspaceFolders, gitHead, gitStatus, listDir, openProject, pickFolder, readFile, recentProjects, watchProject, writeFile } from './projects.ts';
-import { realpathSafe } from './store.ts';
+import { ATTACH_DIR, realpathSafe } from './store.ts';
 
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 const MIME: Record<string, string> = {
@@ -34,6 +34,11 @@ const MIME: Record<string, string> = {
   '.css': 'text/css',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.pdf': 'application/pdf',
   '.ico': 'image/x-icon',
   '.json': 'application/json',
   '.woff2': 'font/woff2',
@@ -54,6 +59,25 @@ class HttpError extends Error {
     super(msg);
     this.status = status;
   }
+}
+
+const MAX_UPLOAD = 30 * 1024 * 1024;
+
+/** Save a file dropped/pasted into the chat under ATTACH_DIR/<date>/ and return its absolute path. */
+async function saveUpload(req: http.IncomingMessage, name: string): Promise<{ path: string; name: string; size: number }> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const c of req) {
+    size += (c as Buffer).length;
+    if (size > MAX_UPLOAD) throw new HttpError(413, 'File quá lớn (tối đa 30MB)');
+    chunks.push(c as Buffer);
+  }
+  const clean = (path.basename(name || 'file').replace(/[^\p{L}\p{N}._ -]+/gu, '_').slice(-120) || 'file').trim();
+  const dir = path.join(ATTACH_DIR, new Date().toISOString().slice(0, 10));
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${crypto.randomBytes(3).toString('hex')}-${clean}`);
+  fs.writeFileSync(file, Buffer.concat(chunks));
+  return { path: file, name: clean, size };
 }
 
 async function body<T>(req: http.IncomingMessage): Promise<T> {
@@ -211,6 +235,7 @@ export function start(opts: StartOptions): Promise<http.Server> {
       const chosen = picked.path ? (q('open') === '0' ? realpathSafe(picked.path) : openProject(picked.path)) : null;
       return { path: chosen, error: picked.error };
     }
+    if (m === 'POST' && p === '/upload') return saveUpload(req, q('name') || 'file');
     if (m === 'GET' && p === '/workspace') return workspaceFolders(project());
     if (m === 'PUT' && p === '/workspace') return setWorkspaceFolders(project(), (await body<{ folders: string[] }>(req)).folders || []);
     if (m === 'GET' && p === '/browse') return browseDirs(q('dir') || undefined, q('hidden') === '1');
@@ -279,6 +304,17 @@ export function start(opts: StartOptions): Promise<http.Server> {
     if (url.pathname.startsWith('/api/')) {
       if (!authorized(req, url)) {
         res.writeHead(401, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'Sai token. Hãy mở app bằng lệnh agentdesk.' }));
+        return;
+      }
+      // attachment preview (images in the chat): raw bytes, only from the attachments folder
+      if (url.pathname === '/api/attachment') {
+        const f = path.resolve(url.searchParams.get('path') || '');
+        if (!f.startsWith(ATTACH_DIR + path.sep) || !fs.existsSync(f)) {
+          res.writeHead(404).end();
+          return;
+        }
+        res.writeHead(200, { 'content-type': MIME[path.extname(f).toLowerCase()] || 'application/octet-stream', 'cache-control': 'max-age=86400' });
+        fs.createReadStream(f).pipe(res);
         return;
       }
       try {

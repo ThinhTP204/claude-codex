@@ -4,6 +4,8 @@ import type { Conversation, NodeRunState, PipelineRun, RunConfig } from '../../.
 import { convAction, ensureConv, getState, hideRun, pickProject, safe, sendMessage, setComposer, setState, toast, useStore } from '../store.ts';
 import { api, qs } from '../api.ts';
 import { ConfigPicker } from './ConfigPicker.tsx';
+import { AttachButton, AttachmentChip } from './Attachments.tsx';
+import { type Attachment, REF_MIME, isImage, uploadFile, withAttachments } from '../attachments.ts';
 import { ProjectChip } from './ProjectMenu.tsx';
 import { TurnView, Markdown } from './Message.tsx';
 import { AgentIcon, Popover, Spinner, cx, fmtDuration, fmtUsage, inputCls, modelLabel } from './ui.tsx';
@@ -164,7 +166,7 @@ function RunBar({ run }: { run: PipelineRun }) {
                 {cfg && <AgentIcon agent={cfg.agent} size={11} />}
                 <span>{n.data.label}</span>
                 {cfg && <span className="text-faint">{modelLabel(catalog, cfg.agent, cfg.model)}</span>}
-                {st.runs > 1 && <span className="text-faint">×{st.runs}</span>}
+                {st.runs > 1 && <span className="text-faint" title={`Lần chạy thứ ${st.runs}: bước sau chấm chưa đạt nên gửi lại bước này làm lại`}>lần {st.runs}</span>}
               </span>
             </div>
           );
@@ -339,8 +341,39 @@ function Composer({ autoFocus }: { autoFocus?: boolean }) {
   const conv = useStore((s) => s.conv);
   const pipelines = useStore((s) => s.pipelines);
   const [text, setText] = useState('');
+  const [atts, setAtts] = useState<Attachment[]>([]);
+  const [dragging, setDragging] = useState(false);
   const ta = useRef<HTMLTextAreaElement>(null);
   const running = !!conv?.turns.some((t) => t.status === 'running') || conv?.run?.status === 'running';
+  const uploading = atts.some((a) => a.uploading);
+
+  const addFiles = (files: File[]) => {
+    for (const file of files) {
+      const id = Math.random().toString(36).slice(2);
+      const image = file.type.startsWith('image/') || isImage(file.name);
+      const name = file.name || 'ảnh dán.png';
+      setAtts((a) => [...a, { id, name, image, uploading: true, preview: image ? URL.createObjectURL(file) : undefined }]);
+      uploadFile(file)
+        .then((path) => setAtts((a) => a.map((x) => (x.id === id ? { ...x, path, uploading: false } : x))))
+        .catch((e) => {
+          toast(`Không tải lên được ${name}: ${(e as Error).message}`);
+          setAtts((a) => a.filter((x) => x.id !== id));
+        });
+    }
+    ta.current?.focus();
+  };
+  const addRefs = (refs: { path: string; name: string }[]) =>
+    setAtts((a) => [...a, ...refs.filter((r) => !a.some((x) => x.path === r.path)).map((r) => ({ id: Math.random().toString(36).slice(2), name: r.name, path: r.path, image: isImage(r.name) }))]);
+  const removeAtt = (id: string) =>
+    setAtts((a) => {
+      const x = a.find((y) => y.id === id);
+      if (x?.preview) URL.revokeObjectURL(x.preview);
+      return a.filter((y) => y.id !== id);
+    });
+  const clearAtts = () => {
+    for (const a of atts) if (a.preview) URL.revokeObjectURL(a.preview);
+    setAtts([]);
+  };
 
   useEffect(() => {
     const el = ta.current;
@@ -367,14 +400,20 @@ function Composer({ autoFocus }: { autoFocus?: boolean }) {
 
   const send = async () => {
     const t = text.trim();
-    if (!t || running) return;
+    if ((!t && !atts.length) || running || uploading) return;
+    const sent = atts;
     setText('');
-    if (!(await sendMessage(t))) setText(t);
+    setAtts([]);
+    if (!(await sendMessage(withAttachments(t, sent)))) {
+      setText(t);
+      setAtts(sent);
+    } else for (const a of sent) if (a.preview) URL.revokeObjectURL(a.preview);
   };
 
   const runPipeline = async (pid: string) => {
     const p = getState().pipelines.find((x) => x.id === pid);
-    const task = text.trim();
+    if (uploading) return toast('Đợi file tải lên xong đã', 'info');
+    const task = withAttachments(text.trim(), atts).trim();
     if (!p) return;
     if (!task) {
       toast('Nhập task vào ô chat trước, rồi chọn pipeline.', 'info');
@@ -383,17 +422,65 @@ function Composer({ autoFocus }: { autoFocus?: boolean }) {
     const c = await ensureConv();
     if (!c) return;
     const ok = await safe(api('POST', `/conversations/${encodeURIComponent(c.id)}/run${qs({ project: getState().project })}`, { pipeline: p, task }));
-    if (ok) setText('');
+    if (ok) {
+      setText('');
+      clearAtts();
+    }
   };
 
   return (
     <div>
-      <div className="rounded-2xl border border-line-strong/70 bg-raised shadow-sm focus-within:border-line-strong focus-within:shadow-md">
+      <div
+        className={cx(
+          'relative rounded-2xl border border-line-strong/70 bg-raised shadow-sm focus-within:border-line-strong focus-within:shadow-md',
+          dragging && 'border-accent ring-2 ring-accent/30',
+        )}
+        onDragOver={(e) => {
+          if (![...e.dataTransfer.types].some((t) => t === 'Files' || t === REF_MIME)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          setDragging(true);
+        }}
+        onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && setDragging(false)}
+        onDrop={(e) => {
+          setDragging(false);
+          const ref = e.dataTransfer.getData(REF_MIME);
+          if (ref) {
+            e.preventDefault();
+            addRefs(JSON.parse(ref));
+            return;
+          }
+          if (e.dataTransfer.files.length) {
+            e.preventDefault();
+            addFiles([...e.dataTransfer.files]);
+          }
+        }}
+      >
+        {dragging && (
+          <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center rounded-2xl bg-accent/10 text-[13px] font-medium text-accent">
+            Thả file vào đây để đính kèm
+          </div>
+        )}
+        {atts.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 px-3 pt-3">
+            {atts.map((a) => (
+              <AttachmentChip key={a.id} a={a} onRemove={() => removeAtt(a.id)} />
+            ))}
+          </div>
+        )}
         <textarea
           ref={ta}
           rows={1}
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onPaste={(e) => {
+            // screenshots / copied files: attach instead of pasting nothing
+            const files = [...e.clipboardData.files];
+            if (files.length && !e.clipboardData.getData('text/plain')) {
+              e.preventDefault();
+              addFiles(files);
+            }
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
@@ -404,6 +491,7 @@ function Composer({ autoFocus }: { autoFocus?: boolean }) {
           className="block max-h-80 min-h-[52px] w-full resize-none bg-transparent px-4 pb-1 pt-3.5 text-[15px] leading-relaxed outline-none placeholder:text-faint"
         />
         <div className="flex items-center gap-1 px-2 pb-2">
+          <AttachButton onFiles={addFiles} />
           <ConfigPicker value={composer} onChange={(c) => setComposer(c, roleId)} />
           <div className="ml-auto flex items-center gap-1.5">
             <Popover
@@ -459,8 +547,8 @@ function Composer({ autoFocus }: { autoFocus?: boolean }) {
               <button
                 type="button"
                 onClick={send}
-                disabled={!text.trim()}
-                title="Gửi"
+                disabled={(!text.trim() && !atts.length) || uploading}
+                title={uploading ? 'Đang tải file lên…' : 'Gửi'}
                 className="grid h-8 w-8 place-items-center rounded-full bg-accent text-white hover:opacity-90 disabled:opacity-35"
               >
                 <ArrowUp size={17} strokeWidth={2.4} />

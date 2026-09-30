@@ -19,6 +19,8 @@ import {
   X,
 } from 'lucide-react';
 import type { Block, Turn } from '../../../shared/types.ts';
+import { splitAttachments } from '../attachments.ts';
+import { SentAttachments } from './Attachments.tsx';
 import { ensurePreview, openFileRef, useStore } from '../store.ts';
 import { AGENT_NAME, AgentIcon, EFFORT_LABEL, Elapsed, PERMISSIONS, Spinner, cx, fmtDuration, fmtUsage, modelLabel } from './ui.tsx';
 
@@ -167,22 +169,72 @@ export function TurnHeader({ t }: { t: Turn }) {
   );
 }
 
+const VERDICT_RE = /\n*[`*_]*VERDICT\s*[:：]\s*[`*_]*\s*(PASS|FAIL)[`*_]*\s*$/i;
+
+/** Pull the trailing "VERDICT: PASS|FAIL" line out of a pipeline step's answer. */
+function splitVerdict(t: Turn): { blocks: Block[]; verdict?: 'pass' | 'fail' } {
+  if (!t.nodeId || t.status === 'running') return { blocks: t.blocks };
+  const i = t.blocks.map((b) => b.type).lastIndexOf('text');
+  const b = t.blocks[i];
+  if (!b || b.type !== 'text') return { blocks: t.blocks };
+  const m = VERDICT_RE.exec(b.text);
+  if (!m) return { blocks: t.blocks };
+  const blocks = t.blocks.slice();
+  blocks[i] = { ...b, text: b.text.slice(0, m.index) };
+  return { blocks, verdict: m[1].toLowerCase() as 'pass' | 'fail' };
+}
+
+/** "Review: not passed → back to Plan": say what the verdict means and where the pipeline goes next. */
+function VerdictBadge({ t, verdict }: { t: Turn; verdict: 'pass' | 'fail' }) {
+  const run = useStore((s) => s.conv?.run);
+  const node = run?.pipeline.nodes.find((n) => n.id === t.nodeId);
+  const next = run?.pipeline.edges
+    .filter((e) => e.source === t.nodeId && e.sourceHandle === verdict)
+    .map((e) => run.pipeline.nodes.find((n) => n.id === e.target))
+    .filter((n) => n && n.type !== 'end');
+  const label = t.nodeLabel || node?.data.label || 'Bước này';
+  const names = (next || []).map((n) => n!.data.label).join(', ');
+  const pass = verdict === 'pass';
+  return (
+    <div className={cx('mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-[13px]', pass ? 'border-ok/40 bg-ok/5' : 'border-err/40 bg-err/5')}>
+      {pass ? <Check size={15} className="mt-0.5 shrink-0 text-ok" /> : <X size={15} className="mt-0.5 shrink-0 text-err" />}
+      <div>
+        <span className={cx('font-semibold', pass ? 'text-ok' : 'text-err')}>
+          {label}: {pass ? 'ĐẠT' : 'CHƯA ĐẠT'}
+        </span>
+        <span className="text-muted">
+          {pass
+            ? names
+              ? ` → chuyển sang ${names}.`
+              : ' → pipeline kết thúc.'
+            : names
+              ? ` → lý do ở phần trên. Pipeline gửi góp ý này lại cho ${names} làm lại (mỗi bước chạy tối đa ${next?.[0]?.data.maxLoops ?? 3} lần), không phải lỗi của app.`
+              : ' → lý do ở phần trên. Pipeline dừng lại chờ bạn quyết định.'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export const TurnView = memo(function TurnView({ t, draft }: { t: Turn; draft?: string }) {
   if (t.role === 'user') {
     if (t.nodeId || t.text?.startsWith('▶️') || t.text?.startsWith('✏️') || t.text?.startsWith('💬')) return <PipelineNote t={t} />;
+    const { text, paths } = splitAttachments(t.text || '');
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-bubble px-4 py-2.5 text-[15px] leading-relaxed">{t.text}</div>
+      <div className="flex flex-col items-end gap-1.5">
+        {paths.length > 0 && <SentAttachments paths={paths} className="max-w-[85%]" />}
+        {text.trim() && <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-bubble px-4 py-2.5 text-[15px] leading-relaxed">{text}</div>}
       </div>
     );
   }
   const running = t.status === 'running';
   const empty = !t.blocks.length && !draft;
+  const { blocks, verdict } = splitVerdict(t);
   return (
     <div className="group">
       <TurnHeader t={t} />
       <div className="space-y-1.5">
-        {t.blocks.map((b) =>
+        {blocks.map((b) =>
           b.type === 'text' ? (
             <Markdown key={b.id} text={b.text} className="py-0.5" />
           ) : b.type === 'thinking' ? (
@@ -198,6 +250,7 @@ export const TurnView = memo(function TurnView({ t, draft }: { t: Turn; draft?: 
         )}
         {draft && <Markdown text={draft} className="caret py-0.5" />}
       </div>
+      {verdict && <VerdictBadge t={t} verdict={verdict} />}
       <div className="mt-2 flex h-5 items-center gap-3 text-[11.5px] text-faint">
         {running ? (
           <span className="inline-flex items-center gap-1.5 text-muted">

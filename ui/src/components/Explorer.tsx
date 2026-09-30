@@ -4,6 +4,7 @@ import type { FsEntry } from '../../../shared/types.ts';
 import { api, qs } from '../api.ts';
 import { addWorkspaceFolder, fileKey, openFile, refreshGit, removeWorkspaceFolder, setRightTab, setScmRoot, setState, useStore } from '../store.ts';
 import { cx } from './ui.tsx';
+import { REF_MIME } from '../attachments.ts';
 
 const EXT_COLOR: Record<string, string> = {
   ts: '#3178c6', tsx: '#3178c6', mts: '#3178c6', cts: '#3178c6',
@@ -115,6 +116,14 @@ function RootTree({ root, primary, multi, filter, collapseSignal }: { root: stri
           <div key={e.path}>
             <div
               onClick={() => (isDir ? toggle(e.path) : openFile(e.path, { root: fileRoot }))}
+              draggable
+              onDragStart={(ev) => {
+                // drop into the chat to attach; other folders in the workspace go by absolute path
+                const ref = primary ? e.path : `${root}/${e.path}`;
+                ev.dataTransfer.setData(REF_MIME, JSON.stringify([{ path: ref, name: e.name }]));
+                ev.dataTransfer.setData('text/plain', ref);
+                ev.dataTransfer.effectAllowed = 'copy';
+              }}
               className={cx('group relative flex h-[22px] cursor-pointer items-center gap-1 pr-2 text-[13px] hover:bg-hover', e.ignored && 'opacity-50')}
               style={{ paddingLeft: 8 + depth * 12 }}
               title={code && !isDir ? `${e.path} · ${GIT_TITLE[code] || code}` : e.ignored ? `${e.path} · bị .gitignore` : e.path}

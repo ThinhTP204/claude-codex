@@ -5,7 +5,8 @@ import { uid } from './store.ts';
 
 const VERDICT_INSTRUCTION =
   '\n\n---\nDòng CUỐI CÙNG trong câu trả lời phải là đúng một trong hai dòng sau:\n' +
-  '`VERDICT: PASS` nếu đạt và có thể đi tiếp, hoặc `VERDICT: FAIL` nếu cần làm lại.';
+  '`VERDICT: PASS` nếu đạt và có thể đi tiếp, hoặc `VERDICT: FAIL` nếu cần làm lại.\n' +
+  'Nếu FAIL: ngay trước dòng VERDICT, viết mục `Cần sửa:` liệt kê ngắn gọn (tối đa 5 ý) những gì bước trước phải làm lại.';
 
 export function parseVerdict(text: string): 'pass' | 'fail' | undefined {
   const all = [...text.matchAll(/VERDICT\s*[:：]\s*\**\s*(PASS|FAIL)/gi)];

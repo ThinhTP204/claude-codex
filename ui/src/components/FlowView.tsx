@@ -80,7 +80,7 @@ const AgentNode = memo(function AgentNode({ data, selected }: NodeProps<RFNode>)
         <span className="text-[14px]">{role?.icon ?? '⚙️'}</span>
         <span className="truncate font-semibold">{data.label}</span>
         <span className="ml-auto flex items-center gap-1">
-          {data.runMode && st && st.runs > 1 && <span className="text-[11px] text-faint">×{st.runs}</span>}
+          {data.runMode && st && st.runs > 1 && <span className="text-[11px] text-faint" title={`Lần chạy thứ ${st.runs}: bước sau chấm chưa đạt nên gửi lại bước này làm lại`}>lần {st.runs}</span>}
           <RunIcon st={data.runMode ? st : undefined} />
         </span>
       </div>
