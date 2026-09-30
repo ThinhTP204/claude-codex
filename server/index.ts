@@ -24,7 +24,7 @@ import {
 } from './conversations.ts';
 import { approve, rerun, startPipeline, stopPipeline } from './pipeline.ts';
 import { deletePipeline, getPipelines, getRoles, savePipeline, saveRoles, DEFAULT_ROLES } from './roles.ts';
-import { browseDirs, forgetProject, gitHead, gitStatus, listDir, openProject, pickFolder, readFile, recentProjects, watchProject, writeFile } from './projects.ts';
+import { browseDirs, resolveFileRef, forgetProject, gitHead, gitStatus, listDir, openProject, pickFolder, readFile, recentProjects, watchProject, writeFile } from './projects.ts';
 
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 const MIME: Record<string, string> = {
@@ -213,6 +213,7 @@ export function start(opts: StartOptions): Promise<http.Server> {
     if (m === 'POST' && p === '/projects/forget') return forgetProject((await body<{ path: string }>(req)).path);
     if (m === 'POST' && p === '/projects/open') return { path: openProject((await body<{ path: string }>(req)).path) };
     if (m === 'GET' && p === '/fs/list') return listDir(project(), q('dir'));
+    if (m === 'GET' && p === '/fs/resolve') return resolveFileRef(project(), q('ref'));
     if (m === 'GET' && p === '/fs/read') {
       const f = readFile(project(), q('path'));
       return { ...f, head: q('head') === '1' ? await gitHead(project(), q('path')) : undefined };

@@ -186,6 +186,72 @@ export async function listDir(root: string, rel: string): Promise<FsEntry[]> {
     .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name, undefined, { numeric: true }) : a.type === 'dir' ? -1 : 1));
 }
 
+// ---- resolving file references written by agents ----
+
+let fileListCache: { root: string; at: number; files: string[] } | undefined;
+
+/** Every file of the project (tracked + untracked, minus .gitignore'd); cached a few seconds. */
+async function projectFiles(root: string): Promise<string[]> {
+  if (fileListCache?.root === root && Date.now() - fileListCache.at < 10_000) return fileListCache.files;
+  let files: string[] = [];
+  if ((await gitPrefix(root)) !== null) {
+    const r = await run('git', ['-C', root, 'ls-files', '-co', '--exclude-standard', '-z'], 15_000);
+    files = r.stdout.split('\0').filter(Boolean);
+  } else {
+    const walk = (dir: string) => {
+      if (files.length > 30_000) return;
+      for (const e of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
+        if (ALWAYS_HIDDEN.has(e.name) || HEAVY_DIRS.includes(e.name)) continue;
+        const rel = dir ? `${dir}/${e.name}` : e.name;
+        if (e.isDirectory()) walk(rel);
+        else files.push(rel);
+      }
+    };
+    walk('');
+  }
+  fileListCache = { root, at: Date.now(), files };
+  return files;
+}
+
+/**
+ * Turn "src/a.tsx:12", "/abs/path/a.tsx#L12", "file:///…", "./a.tsx" or just "a.tsx"
+ * into a project-relative path (+ line). Bare names are looked up among the project files.
+ */
+export async function resolveFileRef(root: string, ref: string): Promise<{ path?: string; line?: number; candidates?: string[] }> {
+  let p = decodeURIComponent(ref.trim()).replace(/^file:\/\//, '').replace(/^`|`$/g, '');
+  let line: number | undefined;
+  const hash = /#L(\d+)(?:-L?\d+)?$/.exec(p);
+  if (hash) {
+    line = Number(hash[1]);
+    p = p.slice(0, hash.index);
+  }
+  const colon = /:(\d+)(?::\d+)?$/.exec(p);
+  if (colon && !/^[A-Za-z]:$/.test(p.slice(0, colon.index))) {
+    line ??= Number(colon[1]);
+    p = p.slice(0, colon.index);
+  }
+  p = p.replace(/^\.\//, '').replace(/\\/g, '/');
+  const abs = path.isAbsolute(p) ? path.resolve(p) : path.resolve(root, p);
+  if (abs === root || abs.startsWith(root + path.sep)) {
+    try {
+      if (fs.statSync(abs).isFile()) return { path: toPosix(path.relative(root, abs)), line };
+    } catch {
+      /* not a direct hit, search below */
+    }
+  }
+  // "components/x.tsx" or "x.tsx": find files ending with it
+  const tail = p.replace(/^\/+/, '');
+  if (!tail || tail.endsWith('/')) return {};
+  const files = await projectFiles(root);
+  const hits = files.filter((f) => f === tail || f.endsWith('/' + tail));
+  if (hits.length === 1) return { path: hits[0], line };
+  if (hits.length > 1) {
+    hits.sort((a, b) => a.length - b.length);
+    return { path: hits[0], line, candidates: hits.slice(0, 8) };
+  }
+  return {};
+}
+
 export function readFile(root: string, rel: string): { content: string; binary: boolean; size: number; tooLarge: boolean } {
   const abs = safeJoin(root, rel);
   const size = fs.statSync(abs).size;

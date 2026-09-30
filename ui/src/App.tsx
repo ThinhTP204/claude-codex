@@ -238,7 +238,7 @@ export function App() {
                 <ChatView />
               ) : (
                 <Suspense fallback={<div className="grid h-full place-items-center"><Spinner /></div>}>
-                  {t.kind === 'flow' ? flowSeen ? <FlowView /> : null : t.kind === 'preview' ? <PreviewView url={t.url} /> : <FileView path={t.path} diff={t.diff} />}
+                  {t.kind === 'flow' ? flowSeen ? <FlowView /> : null : t.kind === 'preview' ? <PreviewView url={t.url} /> : <FileView path={t.path} diff={t.diff} line={t.line} nonce={t.nonce} />}
                 </Suspense>
               )}
             </div>

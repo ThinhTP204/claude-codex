@@ -32,7 +32,7 @@ interface FileData {
   head?: string | null;
 }
 
-export function FileView({ path, diff: openInDiff }: { path: string; diff?: boolean }) {
+export function FileView({ path, diff: openInDiff, line, nonce }: { path: string; diff?: boolean; line?: number; nonce?: number }) {
   const project = useStore((s) => s.project);
   const fsVersion = useStore((s) => s.fsVersion);
   const touched = useStore((s) => s.touched[path]);
@@ -46,6 +46,28 @@ export function FileView({ path, diff: openInDiff }: { path: string; diff?: bool
   const dirty = !!data && value !== data.content;
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
+  const editorRef = useRef<any>(null);
+  const [editorReady, setEditorReady] = useState(0);
+
+  // jump to the line an agent pointed at (re-runs for every click thanks to nonce)
+  useEffect(() => {
+    const ed = editorRef.current;
+    if (!ed || !line || !data) return;
+    const t = setTimeout(() => {
+      ed.layout(); // the tab may have just become visible: measure before centering
+      ed.revealLineInCenter(line);
+      ed.setPosition({ lineNumber: line, column: 1 });
+      const deco = ed.createDecorationsCollection([{ range: { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 1 }, options: { isWholeLine: true, className: 'line-flash' } }]);
+      ed.focus();
+      // the layout may still be settling (tab just shown, panels resizing): centre again
+      setTimeout(() => {
+        ed.layout();
+        ed.revealLineInCenter(line);
+      }, 250);
+      setTimeout(() => deco.clear(), 2500);
+    }, 60);
+    return () => clearTimeout(t);
+  }, [line, nonce, !!data, diff, editorReady]);
 
   const load = async () => {
     if (!project) return;
@@ -142,6 +164,8 @@ export function FileView({ path, diff: openInDiff }: { path: string; diff?: bool
             options={options}
             onChange={(v) => setValue(v ?? '')}
             onMount={(editor, m) => {
+              editorRef.current = editor;
+              setEditorReady((n) => n + 1);
               editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => document.dispatchEvent(new CustomEvent('agentdesk-save', { detail: path })));
             }}
           />

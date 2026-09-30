@@ -19,7 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import type { Block, Turn } from '../../../shared/types.ts';
-import { useStore } from '../store.ts';
+import { ensurePreview, openFileRef, useStore } from '../store.ts';
 import { AGENT_NAME, AgentIcon, EFFORT_LABEL, Elapsed, PERMISSIONS, Spinner, cx, fmtDuration, fmtUsage, modelLabel } from './ui.tsx';
 
 function CodeBlock(props: React.HTMLAttributes<HTMLPreElement>) {
@@ -48,6 +48,9 @@ function CodeBlock(props: React.HTMLAttributes<HTMLPreElement>) {
   );
 }
 
+/** Inline code that looks like a file path: "src/a.tsx", "a.tsx:12", "./x/y.md" */
+const FILE_LIKE = /^(?:\/|\.{1,2}\/|~\/)?(?:[\w@()[\]~.-]+\/)*[\w@()[\]-][\w@()[\].-]*\.[A-Za-z][A-Za-z0-9]{0,7}(?::\d+(?::\d+)?|#L\d+)?$/;
+
 export const Markdown = memo(function Markdown({ text, className }: { text: string; className?: string }) {
   return (
     <div className={cx('prose-chat', className)}>
@@ -56,7 +59,27 @@ export const Markdown = memo(function Markdown({ text, className }: { text: stri
         rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]}
         components={{
           pre: CodeBlock,
-          a: ({ node: _n, ...p }) => <a {...p} target="_blank" rel="noreferrer" />,
+          a: ({ node: _n, href = '', children, ...p }) => {
+            if (/^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?/i.test(href))
+              return <a {...p} href={href} onClick={(e) => (e.preventDefault(), ensurePreview(href.replace(/\/\/(127\.0\.0\.1|0\.0\.0\.0)/, '//localhost'), true))}>{children}</a>;
+            if (/^(https?:|mailto:)/i.test(href)) return <a {...p} href={href} target="_blank" rel="noreferrer">{children}</a>;
+            // anything else is a file reference written by the agent
+            return (
+              <a {...p} href={href} title={`Mở ${href} trong editor`} onClick={(e) => (e.preventDefault(), void openFileRef(href || String(children)))}>
+                {children}
+              </a>
+            );
+          },
+          code: ({ node: _n, className, children, ...p }) => {
+            const text = String(children ?? '');
+            if (!className && !text.includes('\n') && FILE_LIKE.test(text))
+              return (
+                <code {...p} role="link" title={`Mở ${text} trong editor`} onClick={() => void openFileRef(text)} className="file-ref">
+                  {children}
+                </code>
+              );
+            return <code {...p} className={className}>{children}</code>;
+          },
         }}
       >
         {text}

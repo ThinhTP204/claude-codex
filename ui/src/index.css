@@ -232,6 +232,17 @@ button:disabled {
 .prose-chat blockquote {
   margin: 0.7em 0;
 }
+/* inline code that names a file: opens it in the editor */
+.prose-chat code.file-ref {
+  cursor: pointer;
+  color: var(--info);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.prose-chat code.file-ref:hover {
+  text-decoration-style: solid;
+  background: color-mix(in srgb, var(--info) 10%, var(--code-bg));
+}
 .prose-chat ul {
   list-style: disc;
   padding-left: 1.4em;
@@ -400,4 +411,9 @@ button:disabled {
   animation: blink 1s steps(1) infinite;
   color: var(--accent);
   margin-left: 1px;
+}
+
+/* line an agent linked to, briefly highlighted in the editor */
+.monaco-editor .line-flash {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }

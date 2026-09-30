@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowUp, Check, ChevronRight, FolderOpen, Pause, Pencil, Play, RotateCcw, Square, ThumbsDown, ThumbsUp, Workflow, X } from 'lucide-react';
 import type { Conversation, NodeRunState, PipelineRun, RunConfig } from '../../../shared/types.ts';
-import { convAction, ensureConv, getState, pickProject, safe, sendMessage, setComposer, setState, toast, useStore } from '../store.ts';
+import { convAction, ensureConv, getState, hideRun, pickProject, safe, sendMessage, setComposer, setState, toast, useStore } from '../store.ts';
 import { api, qs } from '../api.ts';
 import { ConfigPicker } from './ConfigPicker.tsx';
 import { ProjectChip } from './ProjectMenu.tsx';
@@ -13,6 +13,9 @@ export function ChatView() {
   const conv = useStore((s) => s.conv);
   const drafts = useStore((s) => s.drafts);
   const loading = useStore((s) => s.convLoading);
+  const hiddenRuns = useStore((s) => s.hiddenRuns);
+  // a run the user closed stays hidden until a new run starts (new id)
+  const hidden = !!conv?.run && conv.run.status !== 'running' && conv.run.status !== 'awaiting' && hiddenRuns.includes(conv.run.id);
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
@@ -40,7 +43,7 @@ export function ChatView() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {conv?.run && <RunBar run={conv.run} />}
+      {conv?.run && !hidden && <RunBar run={conv.run} />}
       <div
         ref={scroller}
         onScroll={(e) => {
@@ -56,7 +59,8 @@ export function ChatView() {
         </div>
       </div>
       <div className="mx-auto w-full max-w-3xl px-4 pb-4">
-        {conv?.run && ['awaiting', 'error', 'stopped'].includes(conv.run.status) && conv.run.current && <ApprovalCard conv={conv} run={conv.run} />}
+        {/* the big card only when the user has something to decide: approve a step, or read an error */}
+        {conv?.run && !hidden && ['awaiting', 'error'].includes(conv.run.status) && conv.run.current && <ApprovalCard conv={conv} run={conv.run} />}
         <RoleChips />
         <Composer />
       </div>
@@ -137,8 +141,9 @@ function RunBar({ run }: { run: PipelineRun }) {
   const label =
     run.status === 'running' ? 'Đang chạy' : run.status === 'awaiting' ? 'Chờ duyệt' : run.status === 'done' ? 'Hoàn thành' : run.status === 'error' ? 'Lỗi' : 'Đã dừng';
   const total = agents.reduce((a, n) => a + (run.nodes[n.id]?.usage?.inputTokens || 0) + (run.nodes[n.id]?.usage?.outputTokens || 0), 0);
+  const current = run.current ? run.pipeline.nodes.find((n) => n.id === run.current) : undefined;
   return (
-    <div className="flex items-center gap-2 overflow-x-auto border-b border-line bg-panel/60 px-4 py-2 text-[12.5px]">
+    <div className="flex items-center gap-2 border-b border-line bg-panel/60 px-4 py-2 text-[12.5px]">
       <button type="button" onClick={() => setState({ activeTab: 'flow' })} className="flex shrink-0 items-center gap-1.5 font-medium hover:text-accent" title="Xem sơ đồ">
         <Workflow size={14} className="text-accent" />
         {run.pipeline.name}
@@ -146,7 +151,8 @@ function RunBar({ run }: { run: PipelineRun }) {
       <span className={cx('shrink-0 rounded-full px-2 py-px text-[11px] font-medium', run.status === 'done' ? 'bg-ok/15 text-ok' : run.status === 'error' ? 'bg-err/15 text-err' : run.status === 'awaiting' ? 'bg-warn/15 text-warn' : 'bg-accent/15 text-accent')}>
         {label}
       </span>
-      <div className="flex min-w-0 items-center gap-1">
+      {/* steps scroll horizontally; the action buttons keep their own space on the right */}
+      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
         {agents.map((n, i) => {
           const st = run.nodes[n.id] || { status: 'idle', runs: 0 };
           const cfg = n.data.config;
@@ -164,10 +170,25 @@ function RunBar({ run }: { run: PipelineRun }) {
           );
         })}
       </div>
-      {total > 0 && <span className="ml-auto shrink-0 text-[11px] text-faint">Σ {Math.round(total / 1000)}k token</span>}
+      {total > 0 && <span className="shrink-0 text-[11px] text-faint">Σ {Math.round(total / 1000)}k token</span>}
       {run.status === 'running' && (
-        <button type="button" onClick={() => convAction('run-stop')} className={cx('shrink-0 rounded-md border border-line px-2 py-0.5 hover:bg-hover', total > 0 ? '' : 'ml-auto')}>
+        <button type="button" onClick={() => convAction('run-stop')} className="shrink-0 rounded-md border border-line px-2 py-0.5 hover:bg-hover">
           Dừng
+        </button>
+      )}
+      {run.status === 'stopped' && current && (
+        <button
+          type="button"
+          onClick={() => convAction('rerun', {})}
+          title="Chạy lại bước đang dở rồi đi tiếp như bình thường"
+          className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-accent/50 px-2 py-0.5 text-accent hover:bg-accent/10"
+        >
+          <RotateCcw size={12} /> Chạy tiếp từ bước {current.data.label}
+        </button>
+      )}
+      {(run.status === 'stopped' || run.status === 'done' || run.status === 'error') && (
+        <button type="button" onClick={() => hideRun(run.id)} title="Ẩn thanh pipeline (vẫn xem được ở tab Flow)" className="shrink-0 rounded-md p-1 text-muted hover:bg-hover hover:text-fg">
+          <X size={13} />
         </button>
       )}
     </div>
@@ -213,6 +234,11 @@ export function ApprovalCard({ conv, run, compact }: { conv: Conversation; run: 
         <span className="ml-auto text-[11.5px] text-faint">
           {fmtDuration(st.durationMs)} {st.usage && `· ${fmtUsage(st.usage)}`}
         </span>
+        {!awaiting && !compact && (
+          <button type="button" onClick={() => hideRun(run.id)} title="Đóng" className="-mr-1 rounded-md p-1 text-muted hover:bg-hover hover:text-fg">
+            <X size={14} />
+          </button>
+        )}
       </div>
       {st.error && <div className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap rounded-lg bg-err/5 px-2.5 py-1.5 text-[12.5px] text-err">{st.error}</div>}
 

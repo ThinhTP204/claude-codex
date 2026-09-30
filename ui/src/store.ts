@@ -7,7 +7,7 @@ export type Tab =
   | { id: string; kind: 'chat' }
   | { id: string; kind: 'flow' }
   | { id: string; kind: 'preview'; url: string }
-  | { id: string; kind: 'file'; path: string; diff?: boolean };
+  | { id: string; kind: 'file'; path: string; diff?: boolean; line?: number; nonce?: number };
 
 export interface State {
   project?: string;
@@ -51,6 +51,8 @@ export interface State {
   devUrl?: string;
   /** text pushed into the chat composer ("send to agent") */
   composerInsert?: { text: string; n: number };
+  /** pipeline runs the user dismissed from the chat view */
+  hiddenRuns: string[];
 }
 
 const LS = {
@@ -94,6 +96,7 @@ let state: State = {
   usageLoading: false,
   termOpen: LS.get('termOpen', false),
   showFolderBrowser: false,
+  hiddenRuns: LS.get<string[]>('hiddenRuns', []),
   rightTab: LS.get<'files' | 'scm'>('rightTab', 'files'),
   terms: [],
 };
@@ -361,6 +364,13 @@ export function ensurePreview(url: string, focus: boolean): void {
 // localhost links clicked inside the terminal open in the Preview tab
 setLinkHandler((url) => (URL_RE.test(url) ? ensurePreview(url.replace(/\/\/(0\.0\.0\.0|127\.0\.0\.1|\[::1?\])/, '//localhost'), true) : window.open(url, '_blank')));
 
+/** Hide a finished/stopped pipeline run from the chat (it stays in the Flow tab). */
+export function hideRun(runId: string): void {
+  const hiddenRuns = [...state.hiddenRuns.filter((x) => x !== runId), runId].slice(-50);
+  LS.set('hiddenRuns', hiddenRuns);
+  setState({ hiddenRuns });
+}
+
 /** Put text into the chat composer and switch to the chat tab. */
 export function insertIntoComposer(text: string): void {
   setState((s) => ({ composerInsert: { text, n: (s.composerInsert?.n || 0) + 1 }, activeTab: 'chat' }));
@@ -386,14 +396,28 @@ export async function consumeCodexReset(creditId: string): Promise<void> {
   toast(RESET_OUTCOME[r.outcome] || `Kết quả: ${r.outcome}`, r.outcome === 'reset' ? 'info' : 'error');
 }
 
-export function openFile(path: string, opts: { diff?: boolean } = {}): void {
+export function openFile(path: string, opts: { diff?: boolean; line?: number } = {}): void {
   const id = `file:${path}`;
+  // nonce: jumping to the same line twice still scrolls
+  const patch = { diff: opts.diff, line: opts.line, nonce: Date.now() };
   setState((s) => ({
     tabs: s.tabs.some((t) => t.id === id)
-      ? s.tabs.map((t) => (t.id === id && t.kind === 'file' ? { ...t, diff: opts.diff } : t))
-      : [...s.tabs, { id, kind: 'file', path, diff: opts.diff }],
+      ? s.tabs.map((t) => (t.id === id && t.kind === 'file' ? { ...t, ...patch } : t))
+      : [...s.tabs, { id, kind: 'file', path, ...patch }],
     activeTab: id,
   }));
+}
+
+/** Open a file mentioned by an agent ("src/a.tsx:12", absolute path, or just "a.tsx"). */
+export async function openFileRef(ref: string): Promise<void> {
+  const project = state.project;
+  if (!project) return;
+  const r = await api<{ path?: string; line?: number; candidates?: string[] }>('GET', `/fs/resolve${qs({ project, ref })}`).catch(() => ({}) as { path?: string });
+  if (!r.path) {
+    toast(`Không tìm thấy file "${ref}" trong project`, 'info');
+    return;
+  }
+  openFile(r.path, { line: 'line' in r ? r.line : undefined });
 }
 
 export function closeTab(id: string): void {

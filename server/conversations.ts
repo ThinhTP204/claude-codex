@@ -11,13 +11,63 @@ const AGENT_LABEL: Record<Agent, string> = { claude: 'Claude', codex: 'Codex', a
 let broadcast: (msg: ServerMessage) => void = () => {};
 export const setBroadcast = (fn: typeof broadcast) => (broadcast = fn);
 
-const convs = new Map<string, Conversation>();
 const active = new Map<string, RunHandle>();
 const saveTimers = new Map<string, NodeJS.Timeout>();
 
 const fileOf = (id: string) => path.join(CONV_DIR, `${id.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`);
 
-// Load everything once at startup; conversations are small JSON files.
+// Memory: every conversation has a small index entry (what the sidebar needs); full
+// conversations (all turns, tool output…) are read from disk on demand and kept in a
+// small LRU cache. Conversations that are running are never evicted.
+
+interface IndexEntry extends Omit<ConversationSummary, 'running'> {
+  projectPath: string;
+  /** native CLI session ids, to hide those sessions from the native list */
+  sessionIds: string[];
+  /** has turns or a pipeline run (empty drafts are hidden) */
+  hasContent: boolean;
+}
+
+const index = new Map<string, IndexEntry>();
+const cache = new Map<string, Conversation>(); // Map keeps insertion order → LRU
+const MAX_CACHED = 12;
+
+function entryOf(c: Conversation): IndexEntry {
+  const { running: _r, ...s } = summary(c);
+  return { ...s, projectPath: c.projectPath, sessionIds: Object.values(c.sessions).filter((x): x is string => !!x), hasContent: c.turns.length > 0 || !!c.run };
+}
+
+const pinned = (c: Conversation) => active.has(c.id) || c.run?.status === 'running';
+
+function writeNow(c: Conversation) {
+  clearTimeout(saveTimers.get(c.id));
+  saveTimers.delete(c.id);
+  writeJson(fileOf(c.id), c);
+}
+
+/** Mark as recently used and drop the least recently used idle conversations. */
+function touch(c: Conversation): Conversation {
+  cache.delete(c.id);
+  cache.set(c.id, c);
+  for (const [id, old] of cache) {
+    if (cache.size <= MAX_CACHED) break;
+    if (pinned(old)) continue;
+    if (saveTimers.has(id)) writeNow(old); // never lose a pending write
+    cache.delete(id);
+  }
+  return c;
+}
+
+/** Full conversation from the cache, or from disk. */
+function loadConv(id: string): Conversation | undefined {
+  const hit = cache.get(id);
+  if (hit) return touch(hit);
+  if (!index.has(id)) return;
+  const c = readJson<Conversation | null>(fileOf(id), null);
+  return c?.id ? touch(c) : undefined;
+}
+
+// Startup: build the index (and repair runs cut off by a quit) without keeping turns in memory.
 for (const f of fs.readdirSync(CONV_DIR)) {
   if (!f.endsWith('.json')) continue;
   const c = readJson<Conversation | null>(path.join(CONV_DIR, f), null);
@@ -38,20 +88,25 @@ for (const f of fs.readdirSync(CONV_DIR)) {
     }
     dirty = true;
   }
-  convs.set(c.id, c);
   if (dirty) writeJson(fileOf(c.id), c);
+  index.set(c.id, entryOf(c));
 }
 
 export function saveConv(c: Conversation, immediate = false): void {
   c.updatedAt = Date.now();
-  clearTimeout(saveTimers.get(c.id));
+  index.set(c.id, entryOf(c));
+  if (!cache.has(c.id)) touch(c);
   if (immediate) {
-    writeJson(fileOf(c.id), c);
+    writeNow(c);
     return;
   }
+  clearTimeout(saveTimers.get(c.id));
   saveTimers.set(
     c.id,
-    setTimeout(() => writeJson(fileOf(c.id), c), 400),
+    setTimeout(() => {
+      saveTimers.delete(c.id);
+      writeJson(fileOf(c.id), c);
+    }, 400),
   );
 }
 
@@ -80,11 +135,13 @@ export function summary(c: Conversation): ConversationSummary {
 }
 
 export function listConvs(projectPath: string): ConversationSummary[] {
-  const mine = [...convs.values()].filter((c) => c.projectPath === projectPath && (c.turns.length > 0 || c.run));
-  const known = new Set<string>();
-  for (const c of mine) for (const s of Object.values(c.sessions)) if (s) known.add(s);
+  const mine = [...index.values()].filter((e) => e.projectPath === projectPath && e.hasContent);
+  const known = new Set(mine.flatMap((e) => e.sessionIds));
   const native = listNativeSessions(projectPath).filter((s) => !known.has(s.sessionId));
-  return [...mine.map(summary), ...native.map(({ file: _f, sessionId: _s, ...rest }) => rest)].sort((a, b) => b.updatedAt - a.updatedAt);
+  return [
+    ...mine.map(({ projectPath: _p, sessionIds: _s, hasContent: _h, ...e }) => ({ ...e, running: active.has(e.id) })),
+    ...native.map(({ file: _f, sessionId: _s, ...rest }) => rest),
+  ].sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export function createConv(projectPath: string): Conversation {
@@ -99,14 +156,13 @@ export function createConv(projectPath: string): Conversation {
     turns: [],
     source: 'app',
   };
-  convs.set(c.id, c);
   saveConv(c, true);
   return c;
 }
 
 /** Open a conversation; ids like `claude:<session>` / `codex:<session>` import a native CLI session. */
 export function getConv(id: string, projectPath?: string): Conversation | undefined {
-  const hit = convs.get(id);
+  const hit = loadConv(id);
   // An imported session nobody has continued in AgentDesk: re-import if the CLI wrote to it since.
   const stale =
     hit &&
@@ -135,27 +191,33 @@ export function getConv(id: string, projectPath?: string): Conversation | undefi
   };
   const native = listNativeSessions(projectPath).find((s) => s.id === id);
   if (native) c.title = native.title;
-  convs.set(id, c);
+  cache.delete(id); // replace a stale copy
   saveConv(c, true);
   return c;
 }
 
 export function deleteConv(id: string): void {
-  const c = convs.get(id);
+  const e = index.get(id);
   active.get(id)?.stop();
-  convs.delete(id);
+  clearTimeout(saveTimers.get(id));
+  saveTimers.delete(id);
+  cache.delete(id);
+  index.delete(id);
   fs.rmSync(fileOf(id), { force: true });
-  if (c) broadcast({ type: 'list', projectPath: c.projectPath });
+  if (e) broadcast({ type: 'list', projectPath: e.projectPath });
 }
 
 export function renameConv(id: string, title: string): Conversation | undefined {
-  const c = convs.get(id);
+  const c = loadConv(id);
   if (!c) return;
   c.title = title.slice(0, 120);
   saveConv(c);
   publish(c);
   return c;
 }
+
+/** For diagnostics: how much is held in memory. */
+export const memoryStats = () => ({ indexed: index.size, cached: cache.size, pinned: [...cache.values()].filter(pinned).length });
 
 export const isRunning = (id: string) => active.has(id);
 
