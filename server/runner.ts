@@ -3,7 +3,8 @@ import readline from 'node:readline';
 import type { Block, RunConfig, Usage } from '../shared/types.ts';
 import { killTree, resolveCommand, spawnOpts } from './platform.ts';
 import { noteClaudeModel } from './catalog.ts';
-import { workspaceFolders } from './projects.ts';
+import { nestedRepos, workspaceFolders } from './projects.ts';
+import path from 'node:path';
 import { ATTACH_DIR } from './store.ts';
 import fs from 'node:fs';
 
@@ -122,6 +123,9 @@ export function summarizeToolInput(name: string, input: Record<string, unknown>)
 export function startRun(cfg: RunConfig, prompt: string, cwd: string, resume: string | undefined, ev: RunEvents): RunHandle {
   // folders in the project's workspace are reachable by the agent too
   const extra = workspaceFolders(cwd);
+  // a parent folder holding several repos: Claude only reads .claude/ (skills, commands, CLAUDE.md)
+  // of its cwd and parents, so hand it the repos inside too
+  if (cfg.agent === 'claude') extra.push(...nestedRepos(cwd).map((r) => path.join(cwd, r)));
   // files dropped into the chat live in ATTACH_DIR: let the agent read them
   if (prompt.includes(ATTACH_DIR)) extra.push(ATTACH_DIR);
   if (extra.length) cfg = { ...cfg, addDirs: [...new Set([...(cfg.addDirs || []), ...extra])] };
@@ -241,7 +245,9 @@ export function startRun(cfg: RunConfig, prompt: string, cwd: string, resume: st
         if (e.is_error || e.subtype !== 'success') {
           error = e.result || (e.errors || []).join('\n') || e.subtype;
         } else if (e.result && !texts.includes(e.result)) {
+          // local slash commands (/context, custom ones answering without a model turn) only report here
           texts.push(e.result);
+          ev.onBlock({ type: 'text', id: 'result', text: e.result });
         }
         break;
       }

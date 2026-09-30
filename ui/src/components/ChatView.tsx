@@ -4,6 +4,7 @@ import type { Agent, Conversation, NodeRunState, PipelineRun, RunConfig } from '
 import { convAction, ensureConv, getState, hideRun, pickProject, safe, sendMessage, setComposer, setState, toast, useStore } from '../store.ts';
 import { api, qs } from '../api.ts';
 import { ConfigPicker } from './ConfigPicker.tsx';
+import { useSlashMenu } from './SlashMenu.tsx';
 import { reviewSections } from '../../../shared/verdict.ts';
 import { AttachButton, AttachmentChip } from './Attachments.tsx';
 import { type Attachment, REF_MIME, isImage, uploadFile, withAttachments } from '../attachments.ts';
@@ -455,6 +456,11 @@ function Composer({ autoFocus }: { autoFocus?: boolean }) {
   const [text, setText] = useState('');
   const [atts, setAtts] = useState<Attachment[]>([]);
   const [dragging, setDragging] = useState(false);
+  const project = useStore((s) => s.project);
+  const slash = useSlashMenu(text, project, composer.agent, (v) => {
+    setText(v);
+    requestAnimationFrame(() => ta.current?.focus());
+  });
   const ta = useRef<HTMLTextAreaElement>(null);
   const running = !!conv?.turns.some((t) => t.status === 'running') || conv?.run?.status === 'running';
   const uploading = atts.some((a) => a.uploading);
@@ -568,6 +574,7 @@ function Composer({ autoFocus }: { autoFocus?: boolean }) {
           }
         }}
       >
+        {slash.menu}
         {dragging && (
           <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center rounded-2xl bg-accent/10 text-[13px] font-medium text-accent">
             Thả file vào đây để đính kèm
@@ -594,12 +601,13 @@ function Composer({ autoFocus }: { autoFocus?: boolean }) {
             }
           }}
           onKeyDown={(e) => {
+            if (!e.nativeEvent.isComposing && slash.handleKey(e)) return;
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               void send();
             }
           }}
-          placeholder={running ? 'Đang chạy… (có thể gõ trước)' : 'Giao việc cho agent… (Enter để gửi, Shift+Enter xuống dòng)'}
+          placeholder={running ? 'Đang chạy… (có thể gõ trước)' : 'Giao việc cho agent… (gõ / để xem lệnh & skill, Enter để gửi)'}
           className="block max-h-80 min-h-[52px] w-full resize-none bg-transparent px-4 pb-1 pt-3.5 text-[15px] leading-relaxed outline-none placeholder:text-faint"
         />
         <div className="flex items-center gap-1 px-2 pb-2">

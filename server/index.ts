@@ -8,6 +8,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import type { Agent, Pipeline, Role, RunConfig, ServerMessage } from '../shared/types.ts';
 import { getCatalog, getHealth } from './catalog.ts';
 import { consumeCodexReset, getUsage } from './usage.ts';
+import { listSlash } from './commands.ts';
 import { APP_ROOT, applyUpdate, checkUpdate, updateStatus } from './update.ts';
 import { spawn } from 'node:child_process';
 import { GitError, gitBranches, gitCheckout, gitCommit, gitDiffForMessage, gitDiscard, gitFetch, gitInfo, gitInit, gitLog, gitPull, gitPush, gitStage, gitUnstage } from './git.ts';
@@ -284,6 +285,7 @@ export function start(opts: StartOptions): Promise<http.Server> {
       return { path: chosen, error: picked.error };
     }
     if (m === 'POST' && p === '/upload') return saveUpload(req, q('name') || 'file');
+    if (m === 'GET' && p === '/commands') return listSlash(project(), q('agent') || 'claude');
     if (m === 'GET' && p === '/workspace') return workspaceFolders(project());
     if (m === 'PUT' && p === '/workspace') return setWorkspaceFolders(project(), (await body<{ folders: string[] }>(req)).folders || []);
     if (m === 'GET' && p === '/browse') return browseDirs(q('dir') || undefined, q('hidden') === '1');
