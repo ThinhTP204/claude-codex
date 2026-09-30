@@ -138,14 +138,25 @@ async function onReady(url) {
 
 // A fixed port keeps the page origin stable, so layout/settings in localStorage survive restarts.
 const wanted = Number(opt('--port') || 4545);
+// Restarted by the in-app updater: the old window reconnects to us, and we quit once it is closed.
+const relaunched = process.env.AGENTDESK_RELAUNCH === '1';
 const common = {
   token: process.env.AGENTDESK_TOKEN,
-  exitWhenIdle: !native && !noOpen && !flag('--keep'),
+  exitWhenIdle: relaunched || (!native && !noOpen && !flag('--keep')),
   onReady,
 };
-try {
-  await start({ ...common, port: wanted });
-} catch (e) {
-  if (e.code !== 'EADDRINUSE' || opt('--port')) throw e;
-  await start({ ...common, port: 0 });
+for (let attempt = 0; ; attempt++) {
+  try {
+    await start({ ...common, port: wanted });
+    break;
+  } catch (e) {
+    // the previous instance is still letting go of the port
+    if (e.code === 'EADDRINUSE' && relaunched && attempt < 40) {
+      await new Promise((r) => setTimeout(r, 250));
+      continue;
+    }
+    if (e.code !== 'EADDRINUSE' || opt('--port')) throw e;
+    await start({ ...common, port: 0 });
+    break;
+  }
 }

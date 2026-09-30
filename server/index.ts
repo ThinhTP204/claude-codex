@@ -8,6 +8,8 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import type { Agent, Pipeline, Role, RunConfig, ServerMessage } from '../shared/types.ts';
 import { getCatalog, getHealth } from './catalog.ts';
 import { consumeCodexReset, getUsage } from './usage.ts';
+import { APP_ROOT, applyUpdate, checkUpdate, updateStatus } from './update.ts';
+import { spawn } from 'node:child_process';
 import { GitError, gitBranches, gitCheckout, gitCommit, gitDiffForMessage, gitDiscard, gitFetch, gitInfo, gitInit, gitLog, gitPull, gitPush, gitStage, gitUnstage } from './git.ts';
 import { createTerm, killTerm, listTerms, resizeTerm, setTermBroadcast, writeTerm } from './terminals.ts';
 import { startRun } from './runner.ts';
@@ -17,6 +19,7 @@ import {
   executeTurn,
   getConv,
   isRunning,
+  anyRunning,
   listConvs,
   renameConv,
   setBroadcast,
@@ -28,6 +31,24 @@ import { browseDirs, clearStatusCache, projectRepos, resolveFileRef, safeJoin, f
 import { ATTACH_DIR, realpathSafe } from './store.ts';
 
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
+
+/** Changes whenever the UI is rebuilt: an open window reloads itself after an update. */
+const buildId = () => {
+  try {
+    return String(Math.round(fs.statSync(path.join(DIST, 'index.html')).mtimeMs));
+  } catch {
+    return '';
+  }
+};
+
+/** Only when started through bin/agentdesk.js can we start ourselves again the same way. */
+const canRelaunch = () => {
+  try {
+    return fs.realpathSync(process.argv[1] || '') === fs.realpathSync(path.join(APP_ROOT, 'bin', 'agentdesk.js'));
+  } catch {
+    return false;
+  }
+};
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript',
@@ -113,6 +134,27 @@ async function suggestCommitMessage(root: string, agent: Agent): Promise<string>
 
 export function start(opts: StartOptions): Promise<http.Server> {
   const token = opts.token || crypto.randomBytes(24).toString('hex');
+  let listenPort = opts.port;
+  let v6server: http.Server | undefined;
+
+  /** Start a fresh AgentDesk on the same port + token (open windows reconnect by themselves), then quit. */
+  const relaunch = () => {
+    const launcher = path.join(APP_ROOT, 'bin', 'agentdesk.js');
+    const argv = process.argv.slice(2);
+    const keep = argv.filter((a, i) => a !== '--no-open' && a !== '--port' && argv[i - 1] !== '--port');
+    const child = spawn(process.execPath, [launcher, ...keep, '--no-open', '--port', String(listenPort)], {
+      cwd: process.cwd(),
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+      env: { ...process.env, AGENTDESK_TOKEN: token, AGENTDESK_RELAUNCH: '1' },
+    });
+    child.unref();
+    for (const c of clients) c.terminate();
+    server.close();
+    v6server?.close();
+    setTimeout(() => process.exit(0), 300);
+  };
   const clients = new Set<WebSocket>();
   const unwatch = new Map<WebSocket, () => void>();
   let idleTimer: NodeJS.Timeout | undefined;
@@ -245,7 +287,15 @@ export function start(opts: StartOptions): Promise<http.Server> {
     if (m === 'GET' && p === '/workspace') return workspaceFolders(project());
     if (m === 'PUT' && p === '/workspace') return setWorkspaceFolders(project(), (await body<{ folders: string[] }>(req)).folders || []);
     if (m === 'GET' && p === '/browse') return browseDirs(q('dir') || undefined, q('hidden') === '1');
-    if (m === 'GET' && p === '/env') return { platform: process.platform, home: os.homedir(), sep: path.sep };
+    if (m === 'GET' && p === '/env') return { platform: process.platform, home: os.homedir(), sep: path.sep, build: buildId() };
+    // ---- self-update (git installs) ----
+    if (m === 'GET' && p === '/update/check') return { ...(await checkUpdate(q('force') === '1')), canRestart: canRelaunch(), busy: anyRunning() };
+    if (m === 'GET' && p === '/update/status') return updateStatus();
+    if (m === 'POST' && p === '/update/apply') {
+      if (anyRunning()) throw new HttpError(409, 'Đang có agent chạy. Đợi chạy xong (hoặc bấm dừng) rồi cập nhật.');
+      await applyUpdate(canRelaunch() ? relaunch : () => undefined);
+      return { ok: true };
+    }
     if (m === 'POST' && p === '/projects/forget') return forgetProject((await body<{ path: string }>(req)).path);
     if (m === 'POST' && p === '/projects/open') return { path: openProject((await body<{ path: string }>(req)).path) };
     if (m === 'GET' && p === '/fs/list') return listDir(project(), q('dir'));
@@ -410,8 +460,10 @@ export function start(opts: StartOptions): Promise<http.Server> {
     server.once('error', reject);
     server.listen(opts.port, '127.0.0.1', () => {
       const port = (server.address() as { port: number }).port;
+      listenPort = port;
       // `localhost` may resolve to IPv6 first: answer there too (loopback only, never the network)
       const v6 = http.createServer((req, res) => server.emit('request', req, res));
+      v6server = v6;
       v6.on('upgrade', (req, socket, head) => server.emit('upgrade', req, socket, head));
       const ready = (host: string) => {
         opts.onReady?.(`http://${host}:${port}/?token=${token}`);

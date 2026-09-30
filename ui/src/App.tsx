@@ -8,6 +8,7 @@ import { ChatView } from './components/ChatView.tsx';
 import { FileIcon } from './components/Explorer.tsx';
 import { RightPanel } from './components/RightPanel.tsx';
 import { RolesDialog } from './components/RolesDialog.tsx';
+import { UpdateDialog } from './components/UpdateDialog.tsx';
 import { FolderBrowser } from './components/FolderBrowser.tsx';
 import { useOpenShortcut } from './components/ProjectMenu.tsx';
 import { cx, Spinner } from './components/ui.tsx';
@@ -87,6 +88,7 @@ export function App() {
   const project = useStore((s) => s.project);
   const activeTab = useStore((s) => s.activeTab);
   const showRoles = useStore((s) => s.showRoles);
+  const showUpdate = useStore((s) => s.showUpdate);
   const showFolderBrowser = useStore((s) => s.showFolderBrowser);
   const toast = useStore((s) => s.toast);
   const conv = useStore((s) => s.conv);
@@ -323,6 +325,7 @@ export function App() {
       ) : null}
 
       {showRoles && <RolesDialog />}
+      {showUpdate && <UpdateDialog />}
       {showFolderBrowser && <FolderBrowser />}
       {toast && (
         <div

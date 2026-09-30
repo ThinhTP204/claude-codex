@@ -69,6 +69,20 @@ export interface State {
   composerInsert?: { text: string; n: number };
   /** pipeline runs the user dismissed from the chat view */
   hiddenRuns: string[];
+  /** newer AgentDesk on GitHub (git installs) */
+  update?: UpdateInfo;
+  showUpdate: boolean;
+}
+
+export interface UpdateInfo {
+  supported: boolean;
+  reason?: string;
+  commit?: string;
+  subject?: string;
+  behind: number;
+  commits: { hash: string; subject: string; date: string }[];
+  canRestart: boolean;
+  busy: boolean;
 }
 
 const LS = {
@@ -118,6 +132,7 @@ let state: State = {
   showFolderBrowser: false,
   hiddenRuns: LS.get<string[]>('hiddenRuns', []),
   rightTab: LS.get<'files' | 'scm'>('rightTab', 'files'),
+  showUpdate: false,
   terms: [],
 };
 
@@ -480,6 +495,15 @@ export function insertIntoComposer(text: string): void {
   setState((s) => ({ composerInsert: { text, n: (s.composerInsert?.n || 0) + 1 }, activeTab: 'chat' }));
 }
 
+export async function checkUpdate(force = false): Promise<UpdateInfo | undefined> {
+  const u = await api<UpdateInfo>('GET', `/update/check${force ? '?force=1' : ''}`).catch(() => undefined);
+  if (u) setState({ update: u });
+  return u;
+}
+
+// UI build the page was loaded with: after an in-app update the server restarts with a new one
+let loadedBuild: string | undefined;
+
 export async function refreshUsage(force = false): Promise<void> {
   setState({ usageLoading: true });
   const u = await api<UsageReport>('GET', `/usage${force ? '?force=1' : ''}`).catch(() => undefined);
@@ -632,12 +656,24 @@ function onMessage(msg: ServerMessage): void {
 export function boot(): void {
   if (!TOKEN) return;
   connectWs(onMessage, () => {
+    // reconnected to a server running a newer UI (in-app update): load it
+    void api<{ build: string }>('GET', '/env').then((e) => {
+      if (loadedBuild && e.build && e.build !== loadedBuild) location.reload();
+    });
     watchAll();
     if (state.convId) void openConv(state.convId);
     void refreshList();
   });
   void (async () => {
-    void api<{ platform: string }>('GET', '/env').then((e) => setState({ platform: e.platform })).catch(() => {});
+    void api<{ platform: string; build: string }>('GET', '/env')
+      .then((e) => {
+        loadedBuild ??= e.build;
+        setState({ platform: e.platform });
+      })
+      .catch(() => {});
+    // look for a newer version shortly after start, then every 6 hours
+    setTimeout(() => void checkUpdate(), 8000);
+    setInterval(() => document.visibilityState === 'visible' && void checkUpdate(), 6 * 3600_000);
     const [catalog, roles, pipelines, recent] = await Promise.all([
       safe(api<Catalog>('GET', '/catalog')),
       safe(api<Role[]>('GET', '/roles')),

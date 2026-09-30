@@ -80,6 +80,16 @@ Mở lên rồi chọn project ở sidebar trái. Lần sau app tự mở lại 
 
 Không muốn `npm link` thì chạy `npm start` trong thư mục repo.
 
+### Cập nhật bản mới
+
+Khi GitHub có bản mới, sidebar trái hiện nút **"Có bản cập nhật"** (app tự kiểm tra lúc mở và mỗi 6 giờ). Muốn kiểm tra ngay: bấm vào chữ **AgentDesk** ở góc trên → **Kiểm tra lại**.
+
+Bấm **Cập nhật & khởi động lại**, app tự làm: `git pull` → `npm install` (chỉ khi thư viện thay đổi) → build giao diện → khởi động lại, cửa sổ đang mở tự tải lại. Nếu build lỗi, app giữ nguyên bản cũ.
+
+- Chỉ dùng được khi cài bằng `git clone`.
+- Nên đợi agent chạy xong; terminal đang mở trong app sẽ bị đóng khi khởi động lại.
+- Nếu đã tự sửa code trong thư mục AgentDesk, `git pull` sẽ dừng lại và báo; chạy `git status` để xem.
+
 ---
 
 ## Hướng dẫn sử dụng

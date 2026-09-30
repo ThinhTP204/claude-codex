@@ -234,6 +234,8 @@ export function renameConv(id: string, title: string): Conversation | undefined 
 export const memoryStats = () => ({ indexed: index.size, cached: cache.size, pinned: [...cache.values()].filter(pinned).length });
 
 export const isRunning = (id: string) => active.has(id);
+/** Some agent is working right now (updating would kill it). */
+export const anyRunning = () => active.size > 0;
 
 export function stopConv(id: string): void {
   active.get(id)?.stop();

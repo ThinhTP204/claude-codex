@@ -5,6 +5,7 @@ import { api, qs } from '../api.ts';
 import { getState, newConv, openConv, refreshList, safe, setState, useStore } from '../store.ts';
 import { ProjectSwitcher } from './ProjectMenu.tsx';
 import { UsagePanel } from './UsagePanel.tsx';
+import { UpdateBadge } from './UpdateDialog.tsx';
 import { cycleTheme, useThemePref } from '../theme.ts';
 import { AgentIcon, Popover, Spinner, cx, modelLabel } from './ui.tsx';
 
@@ -56,8 +57,11 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }) {
   return (
     <aside className="flex h-full flex-col bg-sidebar">
       <div className="flex h-12 shrink-0 items-center gap-2 px-3">
-        <div className="grid h-6 w-6 place-items-center rounded-md bg-accent text-[13px] font-bold text-white">A</div>
-        <span className="font-semibold tracking-tight">AgentDesk</span>
+        {/* clicking the name opens the (otherwise hidden) updater: version + "check for updates" */}
+        <button type="button" onClick={() => setState({ showUpdate: true })} title="Phiên bản & cập nhật" className="flex items-center gap-2 rounded-md">
+          <div className="grid h-6 w-6 place-items-center rounded-md bg-accent text-[13px] font-bold text-white">A</div>
+          <span className="font-semibold tracking-tight">AgentDesk</span>
+        </button>
         <ThemeButton />
         <button type="button" onClick={onCollapse} title="Thu gọn sidebar (⌘B)" className="rounded-md p-1 text-muted hover:bg-hover hover:text-fg">
           <PanelLeftClose size={16} />
@@ -113,6 +117,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }) {
         ))}
       </nav>
 
+      <UpdateBadge />
       <div className="space-y-0.5 border-t border-line px-2 py-2">
         <button type="button" onClick={() => setState({ activeTab: 'flow' })} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] text-muted hover:bg-hover hover:text-fg">
           <Workflow size={15} /> Pipelines
