@@ -1,6 +1,8 @@
 {
   "name": "agentdesk",
   "version": "0.1.0",
+  "license": "MIT",
+  "author": "ThinhTP204",
   "private": true,
   "type": "module",
   "description": "Local desktop-style app to delegate work to Claude Code CLI and Codex CLI",

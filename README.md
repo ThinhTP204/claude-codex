@@ -1,5 +1,7 @@
 # AgentDesk (claude-codex)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 App chạy local để **giao việc cho Claude Code và Codex trong cùng một chỗ**. Ví dụ: Claude Opus lập plan, Codex review, Claude Sonnet viết code. Lúc nào cũng thấy rõ bước nào đang dùng model gì của hãng nào, tốn bao nhiêu token, và còn bao nhiêu quota.
 
 > *A local desktop-style app that orchestrates the Claude Code CLI and the Codex CLI: chat with either agent, hand work from one to the other, and run approval-gated multi-agent pipelines (plan → review → code → test) in an n8n-style flow editor.*
@@ -260,3 +262,15 @@ Cách hoạt động: mỗi lượt chat, server chạy
 - `codex exec --json`
 
 trong thư mục project, đọc kết quả stream từng dòng, chuẩn hoá thành các khối (text / suy nghĩ / tool / lỗi) rồi đẩy qua WebSocket lên giao diện.
+
+---
+
+## Giấy phép
+
+Mã nguồn mở theo giấy phép **[MIT](LICENSE)**. © 2026 ThinhTP204.
+
+- **Được:** dùng miễn phí (kể cả thương mại), sửa, phân phối lại, gộp vào dự án khác.
+- **Điều kiện:** giữ nguyên dòng bản quyền và nội dung giấy phép trong mọi bản sao hoặc bản sửa đổi.
+- **Không bảo hành:** phần mềm cung cấp "nguyên trạng"; tác giả không chịu trách nhiệm cho thiệt hại khi sử dụng.
+
+AgentDesk chỉ gọi các CLI `claude`, `codex`, `agy` đã cài trên máy bạn. Các CLI đó và dịch vụ phía sau thuộc Anthropic, OpenAI, Google, theo điều khoản riêng của từng hãng, không nằm trong giấy phép này.
