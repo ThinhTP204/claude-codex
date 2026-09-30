@@ -43,6 +43,29 @@ export function retryFeedback(run: PipelineRun, node: PNode, cfg: RunConfig): st
   );
 }
 
+/** The "Cần sửa / Câu hỏi" part of a checker's answer. */
+function demandsOf(output: string): string {
+  return reviewSections(output)
+    .filter((x) => x.title === 'Cần sửa' || x.title === 'Câu hỏi')
+    .map((x) => `${x.title}:\n${x.body}`)
+    .join('\n\n');
+}
+
+/**
+ * A checker running again after the previous step fixed things: verify the earlier demands instead of
+ * re-reviewing from scratch, which tends to surface new nitpicks and loop forever.
+ */
+function recheckInstruction(demands: string): string {
+  return (
+    '\n\n---\nĐÂY LÀ LẦN CHẤM LẠI. Lần trước bạn yêu cầu:\n<previous-demands>\n' +
+    demands +
+    '\n</previous-demands>\n\n' +
+    'Chỉ kiểm tra: (1) từng ý trên đã được xử lý đúng chưa — ghi rõ ý nào ĐÃ XỬ LÝ / CHƯA; ' +
+    '(2) lần sửa này có gây ra lỗi chặn mới không. Không soi lại từ đầu; góp ý mới không chặn thì ghi vào `Lưu ý:` và vẫn PASS. ' +
+    '`VERDICT: FAIL` chỉ khi còn ý cũ chưa xử lý hoặc có lỗi chặn mới.'
+  );
+}
+
 export function parseVerdict(text: string): 'pass' | 'fail' | 'ask' | undefined {
   const all = [...text.matchAll(/VERDICT\s*[:：]\s*\**\s*(PASS|FAIL|ASK)/gi)];
   const last = all[all.length - 1];
@@ -96,6 +119,8 @@ async function execNode(c: Conversation, run: PipelineRun, node: PNode): Promise
     return;
   }
   st.runs++;
+  // what this checker demanded last round (Review/Test running again after a fix)
+  const lastDemands = node.data.verdict && st.runs > 1 && st.output ? demandsOf(st.output) : '';
   st.status = 'running';
   st.error = undefined;
   st.verdict = undefined;
@@ -107,6 +132,7 @@ async function execNode(c: Conversation, run: PipelineRun, node: PNode): Promise
   const { cfg, template, roleName, roleIcon } = nodeConfig(node);
   let prompt = render(run, template);
   prompt += retryFeedback(run, node, cfg);
+  if (lastDemands) prompt += recheckInstruction(lastDemands);
   if (node.data.verdict) prompt += VERDICT_INSTRUCTION;
 
   const { turn, result } = await executeTurn(c, { prompt, config: cfg, roleName, roleIcon, nodeId: node.id, nodeLabel: node.data.label });
