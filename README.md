@@ -137,6 +137,7 @@ Bấm ô **PROJECT → Đổi** ở góc trên sidebar trái, hoặc nhấn **�
    - **Đính kèm file:** kéo file từ Finder/Explorer của máy vào khung chat, dán ảnh bằng **⌘V** (ảnh chụp màn hình), bấm nút 📎, hoặc kéo file từ Explorer bên phải vào. Agent tự mở file theo đường dẫn; Codex nhận ảnh trực tiếp. File tải lên được lưu trong `~/.agentdesk/attachments`.
 3. Mỗi câu trả lời có header ghi rõ `Claude · Sonnet 5 · Medium · Code`, kèm các tool call (bấm để xem input/output), phần suy nghĩ, thời gian và số token.
 4. **Đổi agent giữa chừng:** ví dụ hỏi Claude trước rồi chuyển sang Codex. Codex tự nhận những gì Claude đã làm.
+5. **Tự tiếp tục khi hết quota:** bấm nút ⟳ cạnh ô chat. Agent hoặc pipeline dừng vì hết quota 5 giờ hay lỗi tạm thời thì app chờ tới lúc quota hồi rồi tự gửi `continue`. Có thể đặt thêm mốc giờ kiểm tra (vd 05:00, 10:00) và giới hạn số lần. Cần để app mở; trên Mac, app giữ máy thức trong lúc chờ.
 
 ### 3. Chạy pipeline
 

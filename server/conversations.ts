@@ -370,7 +370,12 @@ export async function executeTurn(c: Conversation, o: TurnOptions): Promise<{ tu
   c.seen[agent] = c.turns.length;
   saveConv(c, true);
   publish(c);
+  turnEndHook(c, out.turn, out.result);
   return out;
 }
+
+/** Called after every agent turn (the auto-continue scheduler listens). */
+let turnEndHook: (c: Conversation, turn: Turn, result: RunResult) => void = () => {};
+export const setTurnEndHook = (fn: typeof turnEndHook) => (turnEndHook = fn);
 
 export { finalText };

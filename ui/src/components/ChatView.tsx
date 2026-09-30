@@ -5,6 +5,7 @@ import { convAction, ensureConv, getState, hideRun, pickProject, safe, sendMessa
 import { api, qs } from '../api.ts';
 import { ConfigPicker } from './ConfigPicker.tsx';
 import { useSlashMenu } from './SlashMenu.tsx';
+import { AutoContinueBar, AutoContinueButton } from './AutoContinue.tsx';
 import { reviewSections } from '../../../shared/verdict.ts';
 import { AttachButton, AttachmentChip } from './Attachments.tsx';
 import { type Attachment, REF_MIME, isImage, uploadFile, withAttachments } from '../attachments.ts';
@@ -48,6 +49,7 @@ export function ChatView() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       {conv?.run && !hidden && <RunBar run={conv.run} />}
+      {conv && <AutoContinueBar conv={conv} />}
       <div
         ref={scroller}
         onScroll={(e) => {
@@ -612,6 +614,7 @@ function Composer({ autoFocus }: { autoFocus?: boolean }) {
         />
         <div className="flex items-center gap-1 px-2 pb-2">
           <AttachButton onFiles={addFiles} />
+          <AutoContinueButton />
           <ConfigPicker value={composer} onChange={(c) => setComposer(c, roleId)} />
           <div className="ml-auto flex items-center gap-1.5">
             <Popover

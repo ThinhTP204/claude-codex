@@ -2,6 +2,13 @@
 
 Mỗi phiên bản liệt kê những gì thay đổi. Dòng bắt đầu bằng **Mới:**, **Cải tiến:** hoặc **Sửa lỗi:** để app hiện nhãn tương ứng trong hộp thoại Cập nhật. Khi ra bản mới, thêm mục `## [x.y.z]` ở đầu danh sách, GitHub Actions lấy đúng mục đó làm nội dung Release.
 
+## [0.4.0] - 2026-10-01
+
+- Mới: Tự tiếp tục: khi agent hoặc pipeline dừng vì hết quota (hay lỗi mạng, máy chủ quá tải), app chờ đúng lúc quota hồi rồi tự gửi continue (pipeline thì chạy tiếp từ bước đang dở); bật ở nút ⟳ cạnh ô chat
+- Mới: Kiểm tra theo giờ (vd 05:00, 10:00…): đến mốc, việc còn dở thì chạy tiếp, xong rồi thì bỏ qua; tuỳ chọn mồi quota để chu kỳ 5 giờ bắt đầu sớm
+- Mới: Dải thông báo "Tự tiếp tục lúc …" với nút Chạy ngay / Huỷ, nhật ký các lần tự chạy, giới hạn số lần mỗi việc; Mac được giữ thức trong lúc chờ
+- Cải tiến: Tự gửi tin nhắn hoặc bấm Dừng sẽ huỷ lịch tự tiếp tục đang chờ
+
 ## [0.3.0] - 2026-09-30
 
 - Mới: Cập nhật ngay trong app cài đặt (.dmg / .exe): bấm Cập nhật là tải bản mới và khởi động lại, không cần tải lại bộ cài, không phải bấm "Vẫn mở" lại trên macOS

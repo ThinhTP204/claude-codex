@@ -9,6 +9,7 @@ import type { Agent, Pipeline, Role, RunConfig, ServerMessage } from '../shared/
 import { getCatalog, getHealth } from './catalog.ts';
 import { consumeCodexReset, getUsage } from './usage.ts';
 import { listSlash } from './commands.ts';
+import { cancelPending, runNow, setAuto, startAutoContinue, userActed } from './autocontinue.ts';
 import { detectCheckers, runChecks } from './diagnostics.ts';
 import { createPath, deletePath, renamePath, revealPath } from './fileops.ts';
 import { APP_ROOT, applyUpdate, checkUpdate, updateStatus } from './update.ts';
@@ -176,6 +177,7 @@ export function start(opts: StartOptions): Promise<http.Server> {
     for (const c of clients) if (c.readyState === 1) c.send(s);
   };
   setBroadcast(send);
+  startAutoContinue();
   setTermBroadcast(send);
 
   const allowedHost = (h?: string) => !!h && /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(h);
@@ -358,15 +360,24 @@ export function start(opts: StartOptions): Promise<http.Server> {
         return { ok: true };
       }
     }
+    // ---- auto-continue ("Tự tiếp tục") ----
+    if ((mm = /^\/conversations\/([^/]+)\/auto(?:\/(run-now|cancel))?$/.exec(p))) {
+      const c = conv(mm[1]);
+      if (m === 'PUT' && !mm[2]) return setAuto(c, await body(req));
+      if (m === 'POST' && mm[2] === 'run-now') return runNow(c), { ok: true };
+      if (m === 'POST' && mm[2] === 'cancel') return cancelPending(c), { ok: true };
+    }
     if (m === 'POST' && (mm = /^\/conversations\/([^/]+)\/(send|stop|run|approve|rerun|run-stop)$/.exec(p))) {
       const c = conv(mm[1]);
       const b = await body<any>(req);
       switch (mm[2]) {
         case 'send':
           if (isRunning(c.id) || c.run?.status === 'running') throw new HttpError(409, 'Đang có tác vụ chạy, hãy đợi hoặc bấm dừng.');
+          userActed(c);
           void executeTurn(c, { prompt: b.text, config: b.config, roleName: b.roleName, roleIcon: b.roleIcon }).catch((e) => console.error(e));
           return { ok: true, id: c.id };
         case 'stop':
+          userActed(c);
           if (c.run?.status === 'running') stopPipeline(c);
           else stopConv(c.id);
           return { ok: true };

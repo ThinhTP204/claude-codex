@@ -13,6 +13,7 @@ import {
   FileText,
   Globe,
   ListTodo,
+  Repeat,
   Terminal,
   Workflow,
   Wrench,
@@ -244,7 +245,7 @@ function VerdictBadge({ t, verdict }: { t: Turn; verdict: 'pass' | 'fail' | 'ask
 
 export const TurnView = memo(function TurnView({ t, draft }: { t: Turn; draft?: string }) {
   if (t.role === 'user') {
-    if (t.nodeId || t.text?.startsWith('▶️') || t.text?.startsWith('✏️') || t.text?.startsWith('💬')) return <PipelineNote t={t} />;
+    if (t.nodeId || /^(▶️|✏️|💬|🤖)/.test(t.text || '')) return <PipelineNote t={t} />;
     const { text, paths } = splitAttachments(t.text || '');
     return (
       <div className="flex flex-col items-end gap-1.5">
@@ -304,7 +305,7 @@ function PipelineNote({ t }: { t: Turn }) {
     <div className="flex justify-end">
       <div className="max-w-[85%] rounded-xl border border-dashed border-line-strong px-3 py-1.5 text-[12.5px] text-muted">
         <button type="button" onClick={() => setOpen((o) => !o)} className="flex max-w-full items-center gap-1.5 text-left hover:text-fg">
-          <Workflow size={13} className="shrink-0 text-accent" />
+          {(t.text || '').startsWith('🤖') ? <Repeat size={13} className="shrink-0 text-accent" /> : <Workflow size={13} className="shrink-0 text-accent" />}
           <span className="truncate">{isPrompt ? `Pipeline giao cho bước ${t.nodeLabel}` : firstLine}</span>
           <ChevronRight size={13} className={cx('shrink-0 transition-transform', open && 'rotate-90')} />
         </button>

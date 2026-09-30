@@ -136,6 +136,22 @@ export interface PipelineRun {
   endedAt?: number;
 }
 
+/** "Tự tiếp tục": resume a conversation / pipeline stopped by quota or a transient error. */
+export interface AutoContinue {
+  enabled: boolean;
+  /** automatic continues allowed before giving up (reset when the user sends a message) */
+  maxTries: number;
+  tries: number;
+  /** "HH:MM" local times at which the session is checked */
+  schedule: string[];
+  /** at a scheduled time with nothing to continue, send a tiny message so the 5-hour window starts */
+  prime: boolean;
+  /** the one upcoming automatic continue */
+  pending?: { at: number; kind: 'quota' | 'weekly' | 'error' | 'schedule'; reason: string };
+  /** recent automatic actions, newest last */
+  log: { at: number; text: string }[];
+}
+
 export interface Conversation {
   id: string;
   projectPath: string;
@@ -152,6 +168,7 @@ export interface Conversation {
   source: 'app' | 'claude' | 'codex';
   /** for imported sessions: turn count at import time (unchanged => safe to re-import) */
   importedCount?: number;
+  auto?: AutoContinue;
 }
 
 export interface ConversationSummary {
