@@ -1,0 +1,351 @@
+@import 'tailwindcss';
+
+:root {
+  --bg: #faf9f5;
+  --sidebar: #f3f1ea;
+  --panel: #ffffff;
+  --raised: #ffffff;
+  --line: #e6e3d8;
+  --line-strong: #d6d2c4;
+  --fg: #1f1e1d;
+  --muted: #6f6d66;
+  --faint: #9a978d;
+  --hover: #ebe8de;
+  --active: #e3dfd2;
+  --bubble: #efece3;
+  --accent: #d97757;
+  --accent-fg: #ffffff;
+  --claude: #d97757;
+  --codex: #10a37f;
+  --ok: #2f9e44;
+  --warn: #c78a0b;
+  --err: #d9433a;
+  --info: #3b7dd8;
+  --code-bg: #f5f3ec;
+  --explorer: #f8f7f3;
+  --shadow: 0 8px 28px rgb(0 0 0 / 0.1), 0 1px 3px rgb(0 0 0 / 0.08);
+  --git-modified: #895503;
+  --git-added: #007100;
+  --git-deleted: #ad0707;
+  --git-renamed: #007acc;
+  --hl-comment: #8a8778;
+  --hl-keyword: #a3426b;
+  --hl-string: #3f7d3a;
+  --hl-number: #b35c13;
+  --hl-title: #2d63b8;
+  --hl-var: #7a4fb0;
+  color-scheme: light;
+}
+
+/* dark: forced by the theme toggle, or following macOS when set to "system" */
+:root[data-theme='dark'] {
+  --bg: #262624;
+  --sidebar: #1f1e1d;
+  --panel: #2b2b29;
+  --raised: #30302e;
+  --line: #3a3a37;
+  --line-strong: #4a4a46;
+  --fg: #f2f1ec;
+  --muted: #a8a69e;
+  --faint: #7c7a73;
+  --hover: #34342f;
+  --active: #3d3d38;
+  --bubble: #353532;
+  --code-bg: #1e1e1c;
+  --explorer: #222220;
+  --shadow: 0 8px 28px rgb(0 0 0 / 0.45), 0 1px 3px rgb(0 0 0 / 0.4);
+  --git-modified: #e2c08d;
+  --git-added: #73c991;
+  --git-deleted: #c74e39;
+  --git-renamed: #4fc1ff;
+  --hl-comment: #7f7d74;
+  --hl-keyword: #f28bb4;
+  --hl-string: #9ccf82;
+  --hl-number: #f0a45d;
+  --hl-title: #79b0ff;
+  --hl-var: #c9a2f5;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #262624;
+    --sidebar: #1f1e1d;
+    --panel: #2b2b29;
+    --raised: #30302e;
+    --line: #3a3a37;
+    --line-strong: #4a4a46;
+    --fg: #f2f1ec;
+    --muted: #a8a69e;
+    --faint: #7c7a73;
+    --hover: #34342f;
+    --active: #3d3d38;
+    --bubble: #353532;
+    --code-bg: #1e1e1c;
+    --explorer: #222220;
+    --shadow: 0 8px 28px rgb(0 0 0 / 0.45), 0 1px 3px rgb(0 0 0 / 0.4);
+    --git-modified: #e2c08d;
+    --git-added: #73c991;
+    --git-deleted: #c74e39;
+    --git-renamed: #4fc1ff;
+    --hl-comment: #7f7d74;
+    --hl-keyword: #f28bb4;
+    --hl-string: #9ccf82;
+    --hl-number: #f0a45d;
+    --hl-title: #79b0ff;
+    --hl-var: #c9a2f5;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-sidebar: var(--sidebar);
+  --color-panel: var(--panel);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-bubble: var(--bubble);
+  --color-accent: var(--accent);
+  --color-claude: var(--claude);
+  --color-codex: var(--codex);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-err: var(--err);
+  --color-info: var(--info);
+  --color-code: var(--code-bg);
+  --color-explorer: var(--explorer);
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'SF Mono', ui-monospace, Menlo, Monaco, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: default;
+}
+
+.shadow-pop {
+  box-shadow: var(--shadow);
+}
+
+/* ---------- markdown ---------- */
+.prose-chat {
+  line-height: 1.65;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.prose-chat > :first-child {
+  margin-top: 0;
+}
+.prose-chat > :last-child {
+  margin-bottom: 0;
+}
+.prose-chat p,
+.prose-chat ul,
+.prose-chat ol,
+.prose-chat pre,
+.prose-chat table,
+.prose-chat blockquote {
+  margin: 0.7em 0;
+}
+.prose-chat ul {
+  list-style: disc;
+  padding-left: 1.4em;
+}
+.prose-chat ol {
+  list-style: decimal;
+  padding-left: 1.5em;
+}
+.prose-chat li {
+  margin: 0.25em 0;
+}
+.prose-chat h1,
+.prose-chat h2,
+.prose-chat h3,
+.prose-chat h4 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 1.1em 0 0.5em;
+}
+.prose-chat h1 {
+  font-size: 1.35em;
+}
+.prose-chat h2 {
+  font-size: 1.2em;
+}
+.prose-chat h3 {
+  font-size: 1.07em;
+}
+.prose-chat a {
+  color: var(--info);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.prose-chat strong {
+  font-weight: 600;
+}
+.prose-chat blockquote {
+  border-left: 3px solid var(--line-strong);
+  padding-left: 0.9em;
+  color: var(--muted);
+}
+.prose-chat hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 1.2em 0;
+}
+.prose-chat :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0.1em 0.35em;
+}
+.prose-chat pre {
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: auto;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.prose-chat pre code {
+  font-family: var(--font-mono);
+  display: block;
+  padding: 12px 14px;
+}
+.prose-chat table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+  font-size: 13.5px;
+}
+.prose-chat th,
+.prose-chat td {
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+  text-align: left;
+}
+.prose-chat th {
+  background: var(--code-bg);
+  font-weight: 600;
+}
+
+/* ---------- highlight.js (colors come from the theme vars) ---------- */
+.hljs-comment,
+.hljs-quote {
+  color: var(--hl-comment);
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-type {
+  color: var(--hl-keyword);
+}
+.hljs-string,
+.hljs-attr,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+  color: var(--hl-string);
+}
+.hljs-number,
+.hljs-literal {
+  color: var(--hl-number);
+}
+.hljs-title,
+.hljs-section,
+.hljs-function .hljs-title {
+  color: var(--hl-title);
+}
+.hljs-variable,
+.hljs-template-variable,
+.hljs-attribute,
+.hljs-name,
+.hljs-tag {
+  color: var(--hl-var);
+}
+.hljs-deletion {
+  color: var(--err);
+}
+
+/* ---------- react flow ---------- */
+.react-flow {
+  --xy-background-color: var(--bg);
+  --xy-edge-stroke: var(--line-strong);
+  --xy-edge-stroke-selected: var(--accent);
+  --xy-handle-background-color: var(--panel);
+  --xy-handle-border-color: var(--line-strong);
+  --xy-controls-button-background-color: var(--raised);
+  --xy-controls-button-background-color-hover: var(--hover);
+  --xy-controls-button-color: var(--fg);
+  --xy-controls-button-border-color: var(--line);
+  --xy-minimap-background-color: var(--panel);
+  --xy-attribution-background-color: transparent;
+}
+.react-flow__handle {
+  width: 11px;
+  height: 11px;
+  border-width: 2px;
+}
+.react-flow__edge.animated path {
+  stroke: var(--accent);
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+.node-running {
+  animation: pulse-ring 1.4s ease-out infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+.caret::after {
+  content: '▍';
+  animation: blink 1s steps(1) infinite;
+  color: var(--accent);
+  margin-left: 1px;
+}

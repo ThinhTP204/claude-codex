@@ -1,0 +1,44 @@
+{
+  "name": "agentdesk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local desktop-style app to delegate work to Claude Code CLI and Codex CLI",
+  "bin": {
+    "agentdesk": "bin/agentdesk.js"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "dev": "node bin/dev.js",
+    "build": "vite build",
+    "start": "node bin/agentdesk.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "chokidar": "^5.0.0",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@monaco-editor/react": "^4.7.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/ws": "^8.18.2",
+    "@vitejs/plugin-react": "^6.1.1",
+    "@xyflow/react": "^12.12.0",
+    "highlight.js": "^11.12.0",
+    "lucide-react": "^1.49.0",
+    "monaco-editor": "^0.57.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  }
+}

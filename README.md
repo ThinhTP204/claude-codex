@@ -1,0 +1,218 @@
+# AgentDesk (claude-codex)
+
+App chạy local để **giao việc cho Claude Code và Codex trong cùng một chỗ**. Ví dụ: Claude Opus lập plan, Codex review, Claude Sonnet viết code. Lúc nào cũng thấy rõ bước nào đang dùng model gì của hãng nào, tốn bao nhiêu token, và còn bao nhiêu quota.
+
+> *A local desktop-style app that orchestrates the Claude Code CLI and the Codex CLI: chat with either agent, hand work from one to the other, and run approval-gated multi-agent pipelines (plan → review → code → test) in an n8n-style flow editor.*
+
+Giao diện gồm ba cột:
+- **Bên trái (giống Claude):** chọn project, danh sách session, usage.
+- **Ở giữa:** chat và sơ đồ pipeline.
+- **Bên phải (giống VS Code):** cây file.
+
+---
+
+## Tính năng
+
+- **Chat với Claude hoặc Codex.** Chọn Agent, Model, Effort và Quyền ngay dưới ô nhập, không cần gõ `/command`. Có thể đổi agent giữa chừng: agent sau tự nhận phần ngữ cảnh mà nó chưa thấy.
+- **Vai trò có sẵn.** Plan, Review, Code, Test, Debug, Ask, mỗi vai trò gắn sẵn model, effort, quyền và prompt mẫu. Sửa được hoặc thêm vai trò mới.
+- **Pipeline dạng node (giống n8n).**
+  - Kéo thả các bước, nối dây, lưu thành template.
+  - Bước nào cũng có thể bật **dừng chờ duyệt**. Bước review/test có thể chấm **pass/fail** để rẽ nhánh (ví dụ fail thì quay lại Code).
+  - Có giới hạn số vòng lặp để không đốt quota.
+  - Sơ đồ cập nhật trực tiếp khi pipeline chạy.
+- **Đọc lại session cũ.** Hiện cả session tạo bằng Claude Code hay Codex ngoài app (đọc từ `~/.claude` và `~/.codex`), mở ra xem và chat tiếp được.
+- **Explorer giống VS Code.** Màu git (M/U/D), file bị `.gitignore` hiện mờ, file agent vừa sửa có chấm cam. Mở file bằng Monaco (editor của VS Code), xem diff với HEAD, sửa và lưu bằng ⌘S.
+- **Usage và quota.** Xem % đã dùng theo 5 giờ và theo tuần của cả Claude lẫn Codex, giờ reset, và dùng **lượt reset trong bank của Codex** ngay trong app.
+- **Theme** sáng / tối / theo hệ thống.
+- **Chạy bằng một lệnh.** Trên macOS app mở thành cửa sổ native riêng. Đóng cửa sổ là app tắt.
+
+## Yêu cầu
+
+| Cần có | Ghi chú |
+|---|---|
+| **Node.js ≥ 23.6** | Server chạy file `.ts` trực tiếp, không cần build. Kiểm tra: `node -v` |
+| **Claude Code CLI** | `npm i -g @anthropic-ai/claude-code`, rồi chạy `claude` một lần để đăng nhập |
+| **Codex CLI** | `npm i -g @openai/codex`, rồi `codex login`. Nên dùng bản mới để có đủ model |
+| macOS (khuyến nghị) | Có Xcode Command Line Tools (`xcode-select --install`) thì app mở thành cửa sổ native |
+
+Chỉ cần một trong hai CLI là dùng được. Nếu có cả hai thì mới giao việc qua lại được.
+
+Không có Xcode Command Line Tools thì app mở bằng Chrome/Edge/Brave ở chế độ `--app` (cửa sổ riêng, không thanh địa chỉ). Không có các trình duyệt đó thì mở bằng trình duyệt mặc định. Trên Linux cũng chạy được theo cách này.
+
+## Cài đặt
+
+```bash
+git clone https://github.com/ThinhTP204/claude-codex.git
+cd claude-codex
+npm install
+npm run build
+npm link          # tạo lệnh `agentdesk` dùng ở mọi nơi
+```
+
+## Chạy
+
+```bash
+agentdesk
+```
+
+Mở lên rồi chọn project ở sidebar trái. Lần sau app tự mở lại project và cuộc trò chuyện dùng gần nhất.
+
+| Lệnh | Ý nghĩa |
+|---|---|
+| `agentdesk ~/code/my-app` | Mở thẳng một project |
+| `agentdesk --browser` | Mở bằng Chrome/Edge thay vì cửa sổ native |
+| `agentdesk --no-open` | Không mở cửa sổ, chỉ in URL (kèm token) để tự mở |
+| `agentdesk --port 5000` | Đổi port (mặc định 4545, bận thì tự chọn port khác) |
+| `agentdesk --keep` | Không tự tắt khi đóng cửa sổ trình duyệt |
+
+Không muốn `npm link` thì chạy `npm start` trong thư mục repo.
+
+---
+
+## Hướng dẫn sử dụng
+
+### 1. Chọn project
+
+Bấm ô **PROJECT → Đổi** ở góc trên sidebar trái, hoặc nhấn **⌘O**, hoặc vào menu **File → Mở project…**. Có ba cách chọn:
+- **Mở thư mục khác…** mở hộp thoại chọn thư mục.
+- **Nhập đường dẫn…** để gõ hoặc dán đường dẫn.
+- **Gần đây** là danh sách project đã mở. Di chuột vào một project rồi bấm × để bỏ khỏi danh sách.
+
+### 2. Chat và giao việc
+
+1. Chọn một **vai trò** (chip Plan / Review / Code…), hoặc tự chọn ở thanh dưới ô nhập:
+   - **Claude / Codex:** agent nào làm.
+   - **Model:** ví dụ Opus 5, Sonnet 5, GPT-6-Sol… Danh sách model Codex được đọc từ máy.
+   - **Effort:** mức suy nghĩ. App chỉ hiện các mức mà model đó hỗ trợ.
+   - **Quyền:** Chỉ đọc / Sửa file / Sửa + chạy lệnh / Toàn quyền (xem bảng bên dưới).
+   - **⚙ Nâng cao:** fast mode (Codex), model dự phòng, giới hạn chi phí mỗi lượt, system prompt, thư mục bổ sung, bật/tắt MCP.
+2. Gõ yêu cầu rồi nhấn **Enter**. **Shift+Enter** để xuống dòng.
+3. Mỗi câu trả lời có header ghi rõ `Claude · Sonnet 5 · Medium · Code`, kèm các tool call (bấm để xem input/output), phần suy nghĩ, thời gian và số token.
+4. **Đổi agent giữa chừng:** ví dụ hỏi Claude trước rồi chuyển sang Codex. Codex tự nhận những gì Claude đã làm.
+
+### 3. Chạy pipeline
+
+**Cách nhanh:** gõ task vào ô chat rồi bấm **Pipeline → chọn template**.
+
+**Thiết kế pipeline riêng (tab Flow → Thiết kế):**
+- **+ Thêm bước:** thêm một vai trò hoặc node kết thúc. Kéo từ chấm bên phải node này sang node kia để nối dây.
+- **Bấm vào node** để chỉnh vai trò, agent, model, effort, quyền và prompt. Trong prompt dùng được các biến:
+  - `{{task}}`: task gốc anh nhập.
+  - `{{prev}}`: kết quả của bước ngay trước.
+  - `{{Tên bước}}`: kết quả của một bước cụ thể, ví dụ `{{Plan}}`.
+- **Dừng chờ duyệt sau bước này:** pipeline dừng lại cho anh xem trước khi chạy tiếp.
+- **Chấm đạt/chưa đạt:** node có hai nhánh `pass` (xanh) và `fail` (đỏ). Agent phải kết thúc câu trả lời bằng `VERDICT: PASS` hoặc `VERDICT: FAIL`. Nếu nó quên, app hỏi anh.
+- **Số lần chạy tối đa:** chặn vòng lặp fail → làm lại vô hạn.
+- **Lưu / Lưu thành bản mới**, rồi bấm **Chạy** và nhập task.
+
+**Khi pipeline dừng chờ duyệt** (thẻ vàng trong chat, hoặc bấm vào node trên sơ đồ):
+- **Duyệt và chạy tiếp**, hoặc với bước chấm điểm: **Đạt → nhánh Pass** / **Chưa đạt → nhánh Fail**.
+- **Sửa kết quả:** chỉnh output trước khi đưa sang bước sau.
+- **Chạy lại…:** chạy lại bước này, có thể đổi model/effort và kèm góp ý.
+- **Ghi chú:** gửi thêm chỉ dẫn cho bước tiếp theo.
+- **Dừng pipeline.**
+
+Tab **Flow → Lần chạy** hiện sơ đồ trực tiếp: node đang chạy nhấp nháy cam, chờ duyệt viền vàng, xong có dấu ✓, lỗi viền đỏ. Kèm số token và thời gian của từng bước.
+
+### 4. Usage và bank reset
+
+Góc dưới sidebar trái là bảng **Usage**. Mỗi agent có hai thanh (5 giờ và Tuần) đổi màu xanh → vàng → đỏ khi gần chạm giới hạn. Bấm vào để xem chi tiết:
+- % đã dùng, giờ reset, thời gian còn lại, trạng thái đăng nhập, nút **Test** (gửi thử "pong").
+- **Codex: Bank reset.** Danh sách các lượt reset miễn phí đang có. Bấm **Dùng** để đưa giới hạn 5 giờ và tuần của Codex về 0%. App hỏi xác nhận và cảnh báo nếu usage còn thấp. **Dùng rồi không hoàn tác được.**
+- **Claude:** mục "Điều gì đang ăn quota?" hiện phân tích từ `/usage`.
+
+Số liệu tự làm mới khi mở app, mỗi 5 phút, và sau mỗi lượt chạy xong. Việc đọc số liệu **không tốn token**:
+- Claude dùng lệnh `claude -p /usage`.
+- Codex dùng API `account/rateLimits/read` của Codex CLI.
+
+### 5. Làm việc với file
+
+- Bấm file trong Explorer để mở bằng editor Monaco. **⌘S** để lưu.
+- File đã thay đổi so với git có nút **Diff** để so với HEAD.
+- File bị agent sửa trong 5 phút gần nhất có chấm cam. Nếu anh không đang sửa dở, file đang mở tự tải lại nội dung mới.
+
+### Phím tắt
+
+| Phím | Tác dụng |
+|---|---|
+| ⌘N | Cuộc trò chuyện mới |
+| ⌘O | Mở project |
+| ⌘B | Ẩn/hiện sidebar trái |
+| ⇧⌘E | Ẩn/hiện Explorer |
+| ⌘S | Lưu file đang mở |
+| Enter / Shift+Enter | Gửi / xuống dòng |
+| ⌘Enter | Chạy pipeline (trong hộp nhập task) |
+| ⌘R | Tải lại cửa sổ (app native) |
+
+---
+
+## Quyền của agent
+
+| Mức | Claude Code | Codex |
+|---|---|---|
+| **Chỉ đọc** | chỉ cho Read / Grep / Glob / Web | `sandbox_mode=read-only` |
+| **Sửa file** | `acceptEdits`, chặn Bash | `workspace-write` |
+| **Sửa + chạy lệnh** | `acceptEdits` + Bash | `workspace-write` |
+| **Toàn quyền** | `--dangerously-skip-permissions` | `--dangerously-bypass-approvals-and-sandbox` |
+
+App chạy CLI ở chế độ không tương tác, nên không có bước hỏi quyền giữa chừng. Hãy chọn mức quyền phù hợp **trước khi** gửi. Bước plan và review nên để **Chỉ đọc**.
+
+## Chi phí và quota
+
+- Mỗi lần gọi CLI đều tốn một phần cố định (Codex khoảng 17k token, Claude khoảng 24k token vào). Phần lớn được cache nên rẻ hơn con số này.
+- App **tiếp tục session cũ** (`--resume`) khi cùng một agent làm tiếp, để tận dụng cache.
+- Pipeline mẫu dùng model mạnh (Opus, GPT-6-Sol xhigh…). Muốn tiết kiệm thì đổi các bước sang Haiku / Sonnet / GPT-5.5 với effort thấp.
+- Theo dõi quota ở bảng **Usage**.
+
+## Dữ liệu và bảo mật
+
+- Server chỉ lắng nghe ở `127.0.0.1`. Mỗi lần khởi động tạo một **token ngẫu nhiên**, mọi API và WebSocket đều kiểm tra token, Host và Origin, nên trang web khác không gọi được vào app.
+- App **không đọc** mật khẩu hay token đăng nhập của Claude/Codex. Mọi thứ đi qua CLI chính chủ của từng hãng.
+- Dữ liệu của app nằm trong `~/.agentdesk/` (đổi được bằng biến môi trường `AGENTDESK_HOME`):
+  - `conversations/`: cuộc trò chuyện và trạng thái pipeline.
+  - `roles.json`, `pipelines.json`: vai trò và template.
+  - `recent.json`: project gần đây.
+  - `bin/AgentDesk`: cửa sổ native, tự biên dịch từ `native/AgentDeskWindow.swift`.
+- Session gốc của Claude/Codex **chỉ được đọc**. App không sửa hay xoá chúng. Xoá một cuộc trò chuyện trong app chỉ xoá bản lưu của app.
+
+## Khắc phục sự cố
+
+| Hiện tượng | Cách xử lý |
+|---|---|
+| `AgentDesk cần Node >= 23.6` | Cập nhật Node (`nvm install 24`) |
+| Chấm đỏ cạnh Claude/Codex ở bảng Usage | CLI chưa cài hoặc chưa đăng nhập. Chạy `claude` / `codex login` trong terminal |
+| Codex báo model *not supported* | Cập nhật CLI: `npm i -g @openai/codex@latest` |
+| Codex báo `'max' is not supported` | Model đó không hỗ trợ effort đang chọn, hạ effort xuống |
+| Cửa sổ không mở | Chạy `agentdesk --no-open` rồi mở URL được in ra, hoặc thử `agentdesk --browser` |
+| Port 4545 bị chiếm | App tự chọn port khác, hoặc dùng `--port` |
+| Sửa code UI mà không thấy thay đổi | Chạy `npm run build` rồi mở lại app |
+
+## Phát triển
+
+```bash
+npm run dev        # server :3001 + Vite hot reload :5173
+# mở http://localhost:5173/?token=dev
+npm run typecheck
+npm run build
+```
+
+```
+bin/agentdesk.js        lệnh khởi động: build UI lần đầu, mở cửa sổ native / Chrome --app
+native/                 cửa sổ macOS (Swift + WKWebView)
+server/                 Node, chạy .ts trực tiếp
+  runner.ts             gọi claude / codex, chuẩn hoá stream JSON của hai CLI
+  conversations.ts      lượt chat, chuyển ngữ cảnh giữa hai agent
+  pipeline.ts           chạy pipeline: duyệt, pass/fail, vòng lặp
+  sessions.ts           đọc session gốc trong ~/.claude và ~/.codex
+  usage.ts              usage 5h/tuần, bank reset của Codex
+  projects.ts           cây file, git status, theo dõi thay đổi file
+  roles.ts              vai trò và pipeline mặc định
+shared/types.ts         kiểu dữ liệu dùng chung server ↔ UI
+ui/                     React + Vite + Tailwind + React Flow + Monaco
+```
+
+Cách hoạt động: mỗi lượt chat, server chạy
+- `claude -p --output-format stream-json`, hoặc
+- `codex exec --json`
+
+trong thư mục project, đọc kết quả stream từng dòng, chuẩn hoá thành các khối (text / suy nghĩ / tool / lỗi) rồi đẩy qua WebSocket lên giao diện.

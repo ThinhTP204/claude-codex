@@ -1,0 +1,205 @@
+import type { Conversation, PNode, Pipeline, PipelineRun, RunConfig, Turn } from '../shared/types.ts';
+import { executeTurn, finalText, isRunning, publish, saveConv, stopConv } from './conversations.ts';
+import { getRoles } from './roles.ts';
+import { uid } from './store.ts';
+
+const VERDICT_INSTRUCTION =
+  '\n\n---\nDòng CUỐI CÙNG trong câu trả lời phải là đúng một trong hai dòng sau:\n' +
+  '`VERDICT: PASS` nếu đạt và có thể đi tiếp, hoặc `VERDICT: FAIL` nếu cần làm lại.';
+
+export function parseVerdict(text: string): 'pass' | 'fail' | undefined {
+  const all = [...text.matchAll(/VERDICT\s*[:：]\s*\**\s*(PASS|FAIL)/gi)];
+  const last = all[all.length - 1];
+  return last ? (last[1].toLowerCase() as 'pass' | 'fail') : undefined;
+}
+
+const nodeOf = (run: PipelineRun, id: string) => run.pipeline.nodes.find((n) => n.id === id);
+
+function targets(run: PipelineRun, fromId: string): string[] {
+  const node = nodeOf(run, fromId);
+  const st = run.nodes[fromId];
+  return run.pipeline.edges
+    .filter((e) => e.source === fromId)
+    .filter((e) => (node?.data.verdict ? e.sourceHandle === (st?.verdict ?? 'pass') : true))
+    .map((e) => e.target);
+}
+
+function render(run: PipelineRun, template: string): string {
+  return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, key: string) => {
+    const k = key.toLowerCase();
+    if (k === 'task') return run.task;
+    if (k === 'prev') return (run.prevNode && run.nodes[run.prevNode]?.output) || '';
+    const n = run.pipeline.nodes.find((n) => n.data.label.toLowerCase() === k || n.id === key);
+    return (n && run.nodes[n.id]?.output) || '';
+  });
+}
+
+export function nodeConfig(node: PNode): { cfg: RunConfig; template: string; roleName: string; roleIcon?: string } {
+  const role = getRoles().find((r) => r.id === node.data.roleId);
+  return {
+    cfg: node.data.config ?? role?.config ?? { agent: 'claude', model: 'sonnet', permission: 'read' },
+    template: node.data.prompt ?? role?.promptTemplate ?? '{{task}}',
+    roleName: role?.name ?? node.data.label,
+    roleIcon: role?.icon,
+  };
+}
+
+function addNote(c: Conversation, text: string, node?: PNode) {
+  const t: Turn = { id: uid('t_'), role: 'user', createdAt: Date.now(), text, nodeId: node?.id, nodeLabel: node?.data.label, blocks: [], status: 'done' };
+  c.turns.push(t);
+}
+
+async function execNode(c: Conversation, run: PipelineRun, node: PNode): Promise<void> {
+  const st = run.nodes[node.id];
+  const max = node.data.maxLoops ?? 3;
+  if (st.runs >= max) {
+    st.status = 'error';
+    st.error = `Bước "${node.data.label}" đã chạy ${st.runs}/${max} lần, dừng để tránh lặp vô hạn.`;
+    run.status = 'error';
+    run.current = node.id;
+    return;
+  }
+  st.runs++;
+  st.status = 'running';
+  st.error = undefined;
+  st.verdict = undefined;
+  st.verdictMissing = undefined;
+  run.current = node.id;
+  publish(c);
+
+  const { cfg, template, roleName, roleIcon } = nodeConfig(node);
+  let prompt = render(run, template);
+  if (node.data.verdict) prompt += VERDICT_INSTRUCTION;
+
+  const { turn, result } = await executeTurn(c, { prompt, config: cfg, roleName, roleIcon, nodeId: node.id, nodeLabel: node.data.label });
+  st.turnId = turn.id;
+  st.usage = result.usage;
+  st.durationMs = result.durationMs;
+  if (result.stopped) {
+    st.status = 'stopped';
+    run.status = 'stopped';
+    return;
+  }
+  if (!result.ok) {
+    st.status = 'error';
+    st.error = result.error;
+    run.status = 'error';
+    return;
+  }
+  st.output = finalText(turn) || result.finalText;
+  run.prevNode = node.id;
+  if (node.data.verdict) {
+    st.verdict = parseVerdict(st.output);
+    if (!st.verdict) st.verdictMissing = true;
+  }
+  if (node.data.approval || st.verdictMissing) {
+    st.status = 'awaiting';
+    run.status = 'awaiting';
+  } else {
+    st.status = 'done';
+  }
+}
+
+async function pump(c: Conversation): Promise<void> {
+  const run = c.run!;
+  try {
+    while (run.status === 'running') {
+      const next = run.queue.shift();
+      if (!next) {
+        run.status = 'done';
+        run.current = undefined;
+        break;
+      }
+      const node = nodeOf(run, next);
+      if (!node) continue;
+      if (node.type !== 'agent') {
+        run.nodes[next] = { ...run.nodes[next], status: 'done' };
+        run.queue.push(...targets(run, next));
+        continue;
+      }
+      await execNode(c, run, node);
+      if (run.status === 'running') run.queue.push(...targets(run, next));
+    }
+  } catch (e) {
+    run.status = 'error';
+    const cur = run.current && run.nodes[run.current];
+    if (cur) {
+      cur.status = 'error';
+      cur.error = String((e as Error).message || e);
+    }
+  }
+  if (run.status === 'done' || run.status === 'stopped') run.endedAt = Date.now();
+  saveConv(c, true);
+  publish(c);
+}
+
+export function startPipeline(c: Conversation, pipeline: Pipeline, task: string): void {
+  if (isRunning(c.id) || c.run?.status === 'running') throw new Error('Đang có tác vụ chạy trong cuộc trò chuyện này.');
+  if (!task.trim()) throw new Error('Chưa nhập task.');
+  const start = pipeline.nodes.find((n) => n.type === 'task');
+  if (!start) throw new Error('Pipeline cần một node Task để bắt đầu.');
+  const run: PipelineRun = {
+    id: uid('r_'),
+    pipeline: structuredClone(pipeline),
+    task,
+    status: 'running',
+    queue: [start.id],
+    nodes: Object.fromEntries(pipeline.nodes.map((n) => [n.id, { status: 'idle' as const, runs: 0 }])),
+    startedAt: Date.now(),
+  };
+  run.nodes[start.id].output = task;
+  c.run = run;
+  addNote(c, `▶️ Chạy pipeline **${pipeline.name}**\n\n${task}`);
+  saveConv(c, true);
+  void pump(c);
+}
+
+export function approve(c: Conversation, opts: { output?: string; verdict?: 'pass' | 'fail'; note?: string }): void {
+  const run = c.run;
+  if (!run || run.status !== 'awaiting' || !run.current) throw new Error('Không có bước nào đang chờ duyệt.');
+  const node = nodeOf(run, run.current)!;
+  const st = run.nodes[run.current];
+  if (opts.output !== undefined && opts.output !== st.output) {
+    st.output = opts.output;
+    addNote(c, `✏️ Người dùng đã chỉnh sửa kết quả của bước "${node.data.label}". Dùng bản này thay cho bản gốc:\n\n${opts.output}`, node);
+  }
+  if (opts.note?.trim()) addNote(c, `💬 Ghi chú của người dùng sau bước "${node.data.label}":\n${opts.note}`, node);
+  if (opts.verdict) st.verdict = opts.verdict;
+  if (node.data.verdict && !st.verdict) st.verdict = 'pass';
+  st.status = 'done';
+  st.verdictMissing = undefined;
+  run.status = 'running';
+  run.queue.push(...targets(run, node.id));
+  void pump(c);
+}
+
+export function rerun(c: Conversation, opts: { config?: RunConfig; note?: string; nodeId?: string }): void {
+  const run = c.run;
+  if (!run || run.status === 'running' || run.status === 'done') throw new Error('Không có bước nào để chạy lại.');
+  const id = opts.nodeId ?? run.current;
+  const node = id && nodeOf(run, id);
+  if (!node) throw new Error('Không tìm thấy bước để chạy lại.');
+  if (opts.config) node.data.config = opts.config;
+  if (opts.note?.trim()) addNote(c, `💬 Góp ý của người dùng cho lần chạy lại bước "${node.data.label}":\n${opts.note}`, node);
+  const st = run.nodes[node.id];
+  st.runs = Math.max(0, st.runs - 1);
+  run.status = 'running';
+  run.endedAt = undefined;
+  run.queue = [node.id];
+  void pump(c);
+}
+
+export function stopPipeline(c: Conversation): void {
+  const run = c.run;
+  if (!run) return;
+  if (isRunning(c.id)) {
+    stopConv(c.id); // execNode sees `stopped` and ends the loop
+    return;
+  }
+  if (run.status === 'awaiting' || run.status === 'error') {
+    run.status = 'stopped';
+    run.endedAt = Date.now();
+    saveConv(c, true);
+    publish(c);
+  }
+}
