@@ -2,6 +2,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
+import { lineEditor } from './lineEditor.ts';
 import { wsSend } from './api.ts';
 
 // xterm.js instances live outside React so switching tabs or re-rendering never
@@ -73,28 +74,12 @@ export function ensureTerm(id: string, initial = '', pty = true): Entry {
   if (pty) {
     term.onData((data) => wsSend({ type: 'term:input', id, data }));
   } else {
-    // No PTY on the other end: echo and edit the line here, send it on Enter.
-    let line = '';
-    term.onData((data) => {
-      for (const ch of data) {
-        if (ch === '\r') {
-          term.write('\r\n');
-          wsSend({ type: 'term:input', id, data: line + '\n' });
-          line = '';
-        } else if (ch === '\x7f' || ch === '\b') {
-          if (line) {
-            line = [...line].slice(0, -1).join('');
-            term.write('\b \b');
-          }
-        } else if (ch === '\x03') {
-          line = '';
-          wsSend({ type: 'term:input', id, data: '\x03' });
-        } else if (ch >= ' ') {
-          line += ch;
-          term.write(ch);
-        }
-      }
-    });
+    // No PTY on the other end (Windows): edit the line here like a shell would, send it on Enter.
+    const edit = lineEditor(
+      (out) => term.write(out),
+      (data) => wsSend({ type: 'term:input', id, data }),
+    );
+    term.onData(edit);
   }
   term.onResize(({ cols, rows }) => wsSend({ type: 'term:resize', id, cols, rows }));
   e = { term, fit, host };

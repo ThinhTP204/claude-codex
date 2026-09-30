@@ -15,20 +15,27 @@ const SCROLLBACK = 200_000; // chars replayed when the window reloads
 
 let ptyOk: boolean | undefined;
 function canPty(): boolean {
-  if (ptyOk === undefined) ptyOk = !isWin && spawnSync('python3', ['-c', 'import pty, termios'], { windowsHide: true }).status === 0;
+  // AGENTDESK_BASIC_TERM=1 forces the Windows-style line mode (for testing it on macOS/Linux)
+  if (ptyOk === undefined) ptyOk = process.env.AGENTDESK_BASIC_TERM !== '1' && !isWin && spawnSync('python3', ['-c', 'import pty, termios'], { windowsHide: true }).status === 0;
   return ptyOk;
 }
 
 interface Term extends TermInfo {
   child?: ChildProcess;
   buffer: string;
+  /** basic PowerShell: print a prompt after each command (off while cmd/python… owns stdin) */
+  prompt?: boolean;
 }
 
 const terms = new Map<string, Term>();
 let broadcast: (m: ServerMessage) => void = () => {};
 export const setTermBroadcast = (fn: typeof broadcast) => (broadcast = fn);
 
-const info = ({ child: _c, buffer: _b, ...t }: Term): TermInfo => t;
+const info = ({ child: _c, buffer: _b, prompt: _p, ...t }: Term): TermInfo => t;
+
+// "-Command -" never prints a prompt: ask PowerShell for one after every command, like a console would
+const PS_PROMPT = 'Write-Host -NoNewline ("PS " + $PWD.Path + "> ")\n';
+const INTERACTIVE = /^(cmd(\.exe)?|python\d*(\.exe)?|py|node|pwsh|powershell(\.exe)?|ssh\b.*|wsl|bash|mysql\b.*|psql\b.*|irb|sqlite3\b.*|mongosh\b.*)$/i;
 
 function emit(t: Term, data: string) {
   t.buffer = (t.buffer + data).slice(-SCROLLBACK);
@@ -44,6 +51,8 @@ function startShell(t: Term, cols: number, rows: number) {
     // "-Command -" runs each line read from stdin; UTF-8 so Vietnamese output survives
     child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-Command', '-'], { cwd: t.projectPath, stdio: ['pipe', 'pipe', 'pipe'], env, ...spawnOpts });
     child.stdin!.write('[Console]::OutputEncoding = [Text.Encoding]::UTF8\n');
+    t.prompt = true;
+    child.stdin!.write(PS_PROMPT);
   } else {
     child = spawn(process.env.SHELL || '/bin/sh', ['-i'], { cwd: t.projectPath, stdio: ['pipe', 'pipe', 'pipe'], env, ...spawnOpts });
   }
@@ -81,6 +90,14 @@ export function writeTerm(id: string, data: string): void {
   const t = terms.get(id);
   if (!t?.alive || !t.child) return;
   if (!t.pty && data === '\x03') return interruptTerm(t);
+  if (!t.pty && isWin && t.prompt && data.endsWith('\n')) {
+    const line = data.slice(0, -1);
+    // an interactive program (cmd, python, node…) is about to own stdin: stop adding PowerShell to it
+    if (INTERACTIVE.test(line.trim())) t.prompt = false;
+    // same line, so the prompt prints once the command is done and a program reading stdin
+    // never receives it; skip lines that continue on the next one or end in a comment
+    else if (!/[{(|`,]\s*$|#/.test(line)) return void t.child.stdin!.write(`${line.trim() ? `${line}; ` : ''}${PS_PROMPT}`);
+  }
   t.child.stdin!.write(data);
 }
 
