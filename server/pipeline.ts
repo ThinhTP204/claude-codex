@@ -3,15 +3,20 @@ import { executeTurn, finalText, isRunning, publish, saveConv, stopConv } from '
 import { getRoles } from './roles.ts';
 import { uid } from './store.ts';
 
+// Appended at run time, so it also applies to pipelines saved before these rules existed.
 const VERDICT_INSTRUCTION =
-  '\n\n---\nDòng CUỐI CÙNG trong câu trả lời phải là đúng một trong hai dòng sau:\n' +
-  '`VERDICT: PASS` nếu đạt và có thể đi tiếp, hoặc `VERDICT: FAIL` nếu cần làm lại.\n' +
-  'Nếu FAIL: ngay trước dòng VERDICT, viết mục `Cần sửa:` liệt kê ngắn gọn (tối đa 5 ý) những gì bước trước phải làm lại.';
+  '\n\n---\nCách chấm (quan trọng, tránh làm lại vô ích):\n' +
+  '- `VERDICT: FAIL` CHỈ khi có vấn đề chặn: sai logic/yêu cầu, thiếu bước bắt buộc, lỗi bảo mật hoặc mất dữ liệu, hoặc chắc chắn không chạy được.\n' +
+  '- Góp ý nhỏ, cải tiến thêm, cách viết khác, rủi ro thấp: vẫn `VERDICT: PASS`, ghi vào mục `Lưu ý:`.\n' +
+  '- Nếu kết luận phụ thuộc vào một quyết định nghiệp vụ mà chỉ người dùng trả lời được (bước trước không thể tự chốt): `VERDICT: ASK`, ' +
+  'và ngay trước đó viết mục `Câu hỏi:` (tối đa 3 câu, mỗi câu kèm phương án đề xuất).\n' +
+  '- Nếu FAIL: ngay trước dòng VERDICT, viết mục `Cần sửa:` liệt kê ngắn gọn (tối đa 5 ý) những gì bước trước phải làm lại.\n' +
+  'Dòng CUỐI CÙNG phải là đúng một trong: `VERDICT: PASS`, `VERDICT: FAIL`, `VERDICT: ASK`.';
 
-export function parseVerdict(text: string): 'pass' | 'fail' | undefined {
-  const all = [...text.matchAll(/VERDICT\s*[:：]\s*\**\s*(PASS|FAIL)/gi)];
+export function parseVerdict(text: string): 'pass' | 'fail' | 'ask' | undefined {
+  const all = [...text.matchAll(/VERDICT\s*[:：]\s*\**\s*(PASS|FAIL|ASK)/gi)];
   const last = all[all.length - 1];
-  return last ? (last[1].toLowerCase() as 'pass' | 'fail') : undefined;
+  return last ? (last[1].toLowerCase() as 'pass' | 'fail' | 'ask') : undefined;
 }
 
 const nodeOf = (run: PipelineRun, id: string) => run.pipeline.nodes.find((n) => n.id === id);
@@ -65,6 +70,7 @@ async function execNode(c: Conversation, run: PipelineRun, node: PNode): Promise
   st.error = undefined;
   st.verdict = undefined;
   st.verdictMissing = undefined;
+  st.needsInput = undefined;
   run.current = node.id;
   publish(c);
 
@@ -90,10 +96,13 @@ async function execNode(c: Conversation, run: PipelineRun, node: PNode): Promise
   st.output = finalText(turn) || result.finalText;
   run.prevNode = node.id;
   if (node.data.verdict) {
-    st.verdict = parseVerdict(st.output);
-    if (!st.verdict) st.verdictMissing = true;
+    const v = parseVerdict(st.output);
+    // ASK: the reviewer needs a business decision; looping back would just fail again
+    if (v === 'ask') st.needsInput = true;
+    else if (v) st.verdict = v;
+    else st.verdictMissing = true;
   }
-  if (node.data.approval || st.verdictMissing) {
+  if (node.data.approval || st.verdictMissing || st.needsInput) {
     st.status = 'awaiting';
     run.status = 'awaiting';
   } else {
@@ -169,6 +178,7 @@ export function approve(c: Conversation, opts: { output?: string; verdict?: 'pas
   if (node.data.verdict && !st.verdict) st.verdict = 'pass';
   st.status = 'done';
   st.verdictMissing = undefined;
+  st.needsInput = undefined;
   run.status = 'running';
   run.queue.push(...targets(run, node.id));
   void pump(c);

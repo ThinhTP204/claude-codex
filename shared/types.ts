@@ -117,6 +117,8 @@ export interface NodeRunState {
   error?: string;
   /** agent did not print a VERDICT line, so the user has to decide */
   verdictMissing?: boolean;
+  /** agent answered VERDICT: ASK, a question only the user can settle */
+  needsInput?: boolean;
 }
 
 export interface PipelineRun {

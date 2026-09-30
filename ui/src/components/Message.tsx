@@ -169,10 +169,10 @@ export function TurnHeader({ t }: { t: Turn }) {
   );
 }
 
-const VERDICT_RE = /\n*[`*_]*VERDICT\s*[:：]\s*[`*_]*\s*(PASS|FAIL)[`*_]*\s*$/i;
+const VERDICT_RE = /\n*[`*_]*VERDICT\s*[:：]\s*[`*_]*\s*(PASS|FAIL|ASK)[`*_]*\s*$/i;
 
 /** Pull the trailing "VERDICT: PASS|FAIL" line out of a pipeline step's answer. */
-function splitVerdict(t: Turn): { blocks: Block[]; verdict?: 'pass' | 'fail' } {
+function splitVerdict(t: Turn): { blocks: Block[]; verdict?: 'pass' | 'fail' | 'ask' } {
   if (!t.nodeId || t.status === 'running') return { blocks: t.blocks };
   const i = t.blocks.map((b) => b.type).lastIndexOf('text');
   const b = t.blocks[i];
@@ -181,12 +181,22 @@ function splitVerdict(t: Turn): { blocks: Block[]; verdict?: 'pass' | 'fail' } {
   if (!m) return { blocks: t.blocks };
   const blocks = t.blocks.slice();
   blocks[i] = { ...b, text: b.text.slice(0, m.index) };
-  return { blocks, verdict: m[1].toLowerCase() as 'pass' | 'fail' };
+  return { blocks, verdict: m[1].toLowerCase() as 'pass' | 'fail' | 'ask' };
 }
 
 /** "Review: not passed → back to Plan": say what the verdict means and where the pipeline goes next. */
-function VerdictBadge({ t, verdict }: { t: Turn; verdict: 'pass' | 'fail' }) {
+function VerdictBadge({ t, verdict }: { t: Turn; verdict: 'pass' | 'fail' | 'ask' }) {
   const run = useStore((s) => s.conv?.run);
+  if (verdict === 'ask')
+    return (
+      <div className="mt-2 flex items-start gap-2 rounded-lg border border-warn/40 bg-warn/5 px-3 py-2 text-[13px]">
+        <span className="shrink-0 font-semibold text-warn">?</span>
+        <div>
+          <span className="font-semibold text-warn">{t.nodeLabel || 'Bước này'}: CẦN BẠN QUYẾT ĐỊNH</span>
+          <span className="text-muted"> → trả lời mục Câu hỏi ở trên trong thẻ duyệt, pipeline tạm dừng chờ bạn (không lặp lại vô ích).</span>
+        </div>
+      </div>
+    );
   const node = run?.pipeline.nodes.find((n) => n.id === t.nodeId);
   const next = run?.pipeline.edges
     .filter((e) => e.source === t.nodeId && e.sourceHandle === verdict)

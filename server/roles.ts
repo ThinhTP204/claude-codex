@@ -10,7 +10,8 @@ export const DEFAULT_ROLES: Role[] = [
     config: { agent: 'claude', model: 'opus', effort: 'high', permission: 'read' },
     promptTemplate:
       'Lập kế hoạch triển khai chi tiết cho yêu cầu dưới đây. Đọc code liên quan trước. KHÔNG sửa file nào.\n' +
-      'Kết quả gồm: mục tiêu, các file cần đổi, từng bước làm, rủi ro, cách kiểm tra.\n\nYêu cầu:\n{{task}}',
+      'Kết quả gồm: mục tiêu, các file cần đổi, từng bước làm, rủi ro, cách kiểm tra.\n' +
+      'Chỗ nào yêu cầu chưa rõ: tự chọn phương án hợp lý nhất và ghi rõ trong mục `Giả định:`, đừng để câu hỏi bỏ ngỏ.\n\nYêu cầu:\n{{task}}',
   },
   {
     id: 'review',
@@ -20,7 +21,7 @@ export const DEFAULT_ROLES: Role[] = [
     config: { agent: 'codex', model: 'gpt-6-sol', effort: 'xhigh', permission: 'read' },
     promptTemplate:
       'Review kết quả của bước trước (xem ngữ cảnh phía trên) cho yêu cầu: {{task}}\n' +
-      'Kiểm tra với code thực tế. Liệt kê cụ thể lỗi, chỗ thiếu, rủi ro và cách sửa. Không sửa file.',
+      'Kiểm tra với code thực tế. Tập trung vào vấn đề chặn (sai logic, thiếu bước, bảo mật); góp ý nhỏ ghi ngắn gọn. Không sửa file.',
     verdict: true,
   },
   {

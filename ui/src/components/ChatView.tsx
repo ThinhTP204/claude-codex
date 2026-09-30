@@ -233,6 +233,7 @@ export function ApprovalCard({ conv, run, compact }: { conv: Conversation; run: 
           <span className={cx('rounded-full px-2 py-px text-[11px] font-semibold', st.verdict === 'pass' ? 'bg-ok/15 text-ok' : 'bg-err/15 text-err')}>VERDICT: {st.verdict.toUpperCase()}</span>
         )}
         {st.verdictMissing && <span className="rounded-full bg-warn/15 px-2 py-px text-[11px] text-warn">Không có VERDICT, anh chọn giúp</span>}
+        {st.needsInput && <span className="rounded-full bg-warn/15 px-2 py-px text-[11px] font-semibold text-warn">Cần bạn quyết định</span>}
         <span className="ml-auto text-[11.5px] text-faint">
           {fmtDuration(st.durationMs)} {st.usage && `· ${fmtUsage(st.usage)}`}
         </span>
@@ -242,6 +243,11 @@ export function ApprovalCard({ conv, run, compact }: { conv: Conversation; run: 
           </button>
         )}
       </div>
+      {st.needsInput && awaiting && (
+        <div className="mt-2 rounded-lg bg-warn/10 px-2.5 py-1.5 text-[12.5px] text-fg/85">
+          {node.data.label} cần một quyết định mà agent không tự chốt được (mục <b>Câu hỏi</b> ở trên). Gõ câu trả lời vào ô ghi chú bên dưới rồi chọn: gửi lại cho bước trước làm theo, hoặc đi tiếp luôn.
+        </div>
+      )}
       {st.error && <div className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap rounded-lg bg-err/5 px-2.5 py-1.5 text-[12.5px] text-err">{st.error}</div>}
 
       {mode === 'edit' && (
@@ -256,7 +262,7 @@ export function ApprovalCard({ conv, run, compact }: { conv: Conversation; run: 
       {!compact && (
         <input
           className={cx(inputCls, 'mt-2')}
-          placeholder={mode === 'rerun' ? 'Góp ý cho lần chạy lại (tuỳ chọn)…' : 'Ghi chú cho bước tiếp theo (tuỳ chọn)…'}
+          placeholder={mode === 'rerun' ? 'Góp ý cho lần chạy lại (tuỳ chọn)…' : st.needsInput ? 'Trả lời các câu hỏi ở trên…' : 'Ghi chú cho bước tiếp theo (tuỳ chọn)…'}
           value={note}
           onChange={(e) => setNote(e.target.value)}
         />
@@ -267,10 +273,10 @@ export function ApprovalCard({ conv, run, compact }: { conv: Conversation; run: 
           node.data.verdict ? (
             <>
               <button type="button" onClick={() => approve('pass')} className={cx('inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium', st.verdict !== 'fail' ? 'bg-ok text-white' : 'border border-ok/50 text-ok hover:bg-ok/10')}>
-                <ThumbsUp size={14} /> Đạt, đi nhánh Pass
+                <ThumbsUp size={14} /> {st.needsInput ? 'Đi tiếp với câu trả lời này' : 'Đạt, đi nhánh Pass'}
               </button>
               <button type="button" onClick={() => approve('fail')} className={cx('inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium', st.verdict === 'fail' ? 'bg-err text-white' : 'border border-err/50 text-err hover:bg-err/10')}>
-                <ThumbsDown size={14} /> Chưa đạt, đi nhánh Fail
+                <ThumbsDown size={14} /> {st.needsInput ? 'Gửi câu trả lời cho bước trước làm lại' : 'Chưa đạt, đi nhánh Fail'}
               </button>
             </>
           ) : (

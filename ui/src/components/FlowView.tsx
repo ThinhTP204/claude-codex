@@ -647,6 +647,22 @@ function DesignInspector({ node, onChange, onDelete }: { node: RFNode; onChange:
         }
       >
         <textarea className={cx(inputCls, 'h-40 resize-y font-mono text-[12px]')} value={d.prompt ?? role?.promptTemplate ?? ''} onChange={(e) => onChange({ prompt: e.target.value })} />
+        {d.roleId && (
+          <button
+            type="button"
+            title="Pipeline giữ bản copy prompt lúc tạo; bấm để lấy prompt gốc mới nhất của vai trò này"
+            onClick={async () => {
+              const defs = await safe(api<{ id: string; promptTemplate: string }[]>('GET', '/roles/defaults'));
+              const def = defs?.find((r) => r.id === d.roleId);
+              if (!def) return toast('Vai trò này không có prompt gốc (vai trò tự tạo).', 'info');
+              onChange({ prompt: def.promptTemplate });
+              toast('Đã khôi phục prompt gốc. Nhớ bấm Lưu pipeline.', 'info');
+            }}
+            className="mt-1 text-[12px] text-muted underline-offset-2 hover:text-fg hover:underline"
+          >
+            Khôi phục prompt gốc
+          </button>
+        )}
       </Field>
       <div className="space-y-2.5">
         <Toggle checked={!!d.approval} onChange={(approval) => onChange({ approval })} label={<span><Pause size={12} className="mr-1 inline text-warn" />Dừng chờ duyệt sau bước này</span>} />

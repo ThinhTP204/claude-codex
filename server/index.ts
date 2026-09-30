@@ -221,6 +221,7 @@ export function start(opts: StartOptions): Promise<http.Server> {
       saveRoles(await body<Role[]>(req));
       return getRoles();
     }
+    if (m === 'GET' && p === '/roles/defaults') return DEFAULT_ROLES;
     if (m === 'POST' && p === '/roles/reset') {
       saveRoles(DEFAULT_ROLES);
       return getRoles();
