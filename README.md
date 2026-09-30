@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/logo.svg" width="96" alt="AgentDesk"></p>
+
 # AgentDesk (claude-codex)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)

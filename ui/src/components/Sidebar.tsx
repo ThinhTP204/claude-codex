@@ -6,6 +6,7 @@ import { getState, newConv, openConv, refreshList, safe, setState, useStore } fr
 import { ProjectSwitcher } from './ProjectMenu.tsx';
 import { UsagePanel } from './UsagePanel.tsx';
 import { UpdateBadge } from './UpdateDialog.tsx';
+import { Logo } from './Logo.tsx';
 import { cycleTheme, useThemePref } from '../theme.ts';
 import { AgentIcon, Popover, Spinner, cx, modelLabel } from './ui.tsx';
 
@@ -59,7 +60,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }) {
       <div className="flex h-12 shrink-0 items-center gap-2 px-3">
         {/* clicking the name opens the (otherwise hidden) updater: version + "check for updates" */}
         <button type="button" onClick={() => setState({ showUpdate: true })} title="Phiên bản & cập nhật" className="flex items-center gap-2 rounded-md">
-          <div className="grid h-6 w-6 place-items-center rounded-md bg-accent text-[13px] font-bold text-white">A</div>
+          <Logo size={24} />
           <span className="font-semibold tracking-tight">AgentDesk</span>
         </button>
         <ThemeButton />

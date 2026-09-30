@@ -146,24 +146,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         a.beginSheetModal(for: window) { r in completionHandler(r == .alertFirstButtonReturn ? field.stringValue : nil) }
     }
 
+    /** Dock icon: the AgentDesk mark (docs/logo.svg) drawn on its 128-unit grid. */
     static func makeIcon() -> NSImage {
         let size = NSSize(width: 512, height: 512)
         let img = NSImage(size: size)
         img.lockFocus()
-        let rect = NSRect(origin: .zero, size: size).insetBy(dx: 40, dy: 40)
-        NSColor(red: 0.851, green: 0.467, blue: 0.341, alpha: 1).setFill()
-        NSBezierPath(roundedRect: rect, xRadius: 96, yRadius: 96).fill()
-        let path = NSBezierPath()
-        path.lineWidth = 44
-        path.lineCapStyle = .round
-        path.lineJoinStyle = .round
-        path.move(to: NSPoint(x: 150, y: 140))
-        path.line(to: NSPoint(x: 256, y: 380))
-        path.line(to: NSPoint(x: 362, y: 140))
-        path.move(to: NSPoint(x: 195, y: 230))
-        path.line(to: NSPoint(x: 317, y: 230))
-        NSColor.white.setStroke()
-        path.stroke()
+        // macOS icons keep a margin around the tile; the SVG's y axis points down
+        let inset: CGFloat = 40, k = (512 - 2 * inset) / 128
+        func r(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> NSRect {
+            NSRect(x: inset + x * k, y: inset + (128 - y - h) * k, width: w * k, height: h * k)
+        }
+        func p(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: inset + x * k, y: inset + (128 - y) * k) }
+        func color(_ hex: Int) -> NSColor {
+            NSColor(red: CGFloat((hex >> 16) & 0xff) / 255, green: CGFloat((hex >> 8) & 0xff) / 255, blue: CGFloat(hex & 0xff) / 255, alpha: 1)
+        }
+        color(0x1f1e1c).setFill()
+        NSBezierPath(roundedRect: r(0, 0, 128, 128), xRadius: 28 * k, yRadius: 28 * k).fill()
+        let links = NSBezierPath()
+        links.lineWidth = 3.5 * k
+        links.lineCapStyle = .round
+        links.move(to: p(84, 42))
+        links.curve(to: p(98, 54), controlPoint1: p(93, 42), controlPoint2: p(98, 46))
+        links.move(to: p(44, 86))
+        links.curve(to: p(30, 74), controlPoint1: p(35, 86), controlPoint2: p(30, 82))
+        color(0x5a5750).setStroke()
+        links.stroke()
+        for (x, y, hex) in [(30.0, 34.0, 0xD97757), (46.0, 56.0, 0x10A37F), (30.0, 78.0, 0x8f8a80)] {
+            color(hex).setFill()
+            NSBezierPath(roundedRect: r(CGFloat(x), CGFloat(y), 52, 16), xRadius: 8 * k, yRadius: 8 * k).fill()
+        }
         img.unlockFocus()
         return img
     }
