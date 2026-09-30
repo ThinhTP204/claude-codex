@@ -35,7 +35,8 @@ if (flag('--help') || flag('-h')) {
 const dist = path.join(ROOT, 'dist', 'index.html');
 if (!fs.existsSync(dist)) {
   console.log('Đang build giao diện lần đầu…');
-  const r = spawnSync('npx', ['vite', 'build'], { cwd: ROOT, stdio: 'inherit' });
+  // npx is npx.cmd on Windows, which needs a shell
+  const r = spawnSync('npx', ['vite', 'build'], { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' });
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
 
@@ -58,40 +59,66 @@ function nativeWindowBin() {
   return r.status === 0 ? bin : null;
 }
 
-function openBrowserWindow(url) {
-  const profile = path.join(DATA, 'chrome-profile');
-  const browsers = ['Google Chrome', 'Microsoft Edge', 'Brave Browser', 'Chromium', 'Vivaldi', 'Arc'];
+/** Start a detached process; a missing program must never crash AgentDesk. */
+function launch(cmd, args) {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, { stdio: 'ignore', detached: true, windowsHide: false });
+    child.once('error', () => resolve(false));
+    child.once('spawn', () => {
+      child.unref();
+      resolve(true);
+    });
+  });
+}
+
+const firstExisting = (paths) => paths.find((p) => p && fs.existsSync(p));
+
+/** Chromium-based browsers that support --app (a window without tabs / address bar) */
+function appBrowsers() {
   if (process.platform === 'darwin') {
-    for (const app of browsers) {
-      if (!fs.existsSync(`/Applications/${app}.app`) && !fs.existsSync(path.join(os.homedir(), 'Applications', `${app}.app`))) continue;
-      spawn('open', ['-na', app, '--args', `--app=${url}`, `--user-data-dir=${profile}`, '--window-size=1500,940', '--no-first-run', '--no-default-browser-check'], {
-        stdio: 'ignore',
-        detached: true,
-      }).unref();
-      return app;
-    }
-    spawn('open', [url], { stdio: 'ignore', detached: true }).unref();
-    return 'trình duyệt mặc định';
+    return ['Google Chrome', 'Microsoft Edge', 'Brave Browser', 'Chromium', 'Vivaldi', 'Arc']
+      .filter((app) => fs.existsSync(`/Applications/${app}.app`) || fs.existsSync(path.join(os.homedir(), 'Applications', `${app}.app`)))
+      .map((app) => ({ name: app, cmd: 'open', pre: ['-na', app, '--args'] }));
   }
-  for (const bin of ['google-chrome', 'chromium', 'microsoft-edge']) {
-    if (spawnSync('which', [bin]).status === 0) {
-      spawn(bin, [`--app=${url}`, `--user-data-dir=${profile}`], { stdio: 'ignore', detached: true }).unref();
-      return bin;
-    }
+  if (process.platform === 'win32') {
+    const pf = process.env.ProgramFiles || 'C:\\Program Files';
+    const pf86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+    const local = process.env.LOCALAPPDATA || '';
+    const candidates = [
+      { name: 'Microsoft Edge', paths: [`${pf86}\\Microsoft\\Edge\\Application\\msedge.exe`, `${pf}\\Microsoft\\Edge\\Application\\msedge.exe`] },
+      { name: 'Google Chrome', paths: [`${pf}\\Google\\Chrome\\Application\\chrome.exe`, `${pf86}\\Google\\Chrome\\Application\\chrome.exe`, `${local}\\Google\\Chrome\\Application\\chrome.exe`] },
+      { name: 'Brave', paths: [`${pf}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`, `${local}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`] },
+    ];
+    return candidates.map((c) => ({ name: c.name, cmd: firstExisting(c.paths), pre: [] })).filter((c) => c.cmd);
   }
-  spawn('xdg-open', [url], { stdio: 'ignore', detached: true }).unref();
-  return 'trình duyệt mặc định';
+  return ['google-chrome', 'chromium', 'chromium-browser', 'microsoft-edge', 'brave-browser']
+    .filter((bin) => spawnSync('which', [bin]).status === 0)
+    .map((bin) => ({ name: bin, cmd: bin, pre: [] }));
+}
+
+async function openBrowserWindow(url) {
+  const profile = path.join(DATA, 'chrome-profile');
+  for (const b of appBrowsers()) {
+    const ok = await launch(b.cmd, [...b.pre, `--app=${url}`, `--user-data-dir=${profile}`, '--window-size=1500,940', '--no-first-run', '--no-default-browser-check']);
+    if (ok) return b.name;
+  }
+  // last resort: the default browser, as a normal tab (rundll32 avoids cmd.exe mangling "&" in the URL)
+  const fallback =
+    process.platform === 'darwin' ? ['open', [url]] : process.platform === 'win32' ? ['rundll32', ['url.dll,FileProtocolHandler', url]] : ['xdg-open', [url]];
+  if (await launch(fallback[0], fallback[1])) return 'trình duyệt mặc định';
+  return null;
 }
 
 const noOpen = flag('--no-open');
 const native = !noOpen && !flag('--browser') ? nativeWindowBin() : null;
 
-function onReady(url) {
+async function onReady(url) {
   const full = project ? `${url}&project=${encodeURIComponent(project)}` : url;
   if (noOpen) {
     console.log(`AgentDesk đang chạy: ${full}`);
   } else if (native) {
     const win = spawn(native, [full], { stdio: 'ignore' });
+    win.on('error', () => console.log(`Không mở được cửa sổ native. Mở link này bằng trình duyệt:\n  ${full}`));
     const quit = () => {
       try {
         win.kill();
@@ -103,8 +130,9 @@ function onReady(url) {
     process.on('SIGTERM', quit);
     console.log('AgentDesk đã mở. Đóng cửa sổ hoặc Ctrl+C để tắt.');
   } else {
-    const via = openBrowserWindow(full);
-    console.log(`AgentDesk đã mở (${via}). Đóng cửa sổ hoặc Ctrl+C để tắt.`);
+    const via = await openBrowserWindow(full);
+    if (via) console.log(`AgentDesk đã mở (${via}). Đóng cửa sổ hoặc Ctrl+C để tắt.`);
+    else console.log(`Không tự mở được cửa sổ. Mở link này bằng trình duyệt:\n  ${full}`);
   }
 }
 

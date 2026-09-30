@@ -23,6 +23,7 @@ Giao diện gồm ba cột:
 - **Đọc lại session cũ.** Hiện cả session tạo bằng Claude Code hay Codex ngoài app (đọc từ `~/.claude` và `~/.codex`), mở ra xem và chat tiếp được.
 - **Explorer giống VS Code.** Màu git (M/U/D), file bị `.gitignore` hiện mờ, file agent vừa sửa có chấm cam. Mở file bằng Monaco (editor của VS Code), xem diff với HEAD, sửa và lưu bằng ⌘S.
 - **Usage và quota.** Xem % đã dùng theo 5 giờ và theo tuần của cả Claude lẫn Codex, giờ reset, và dùng **lượt reset trong bank của Codex** ngay trong app.
+- **Terminal có sẵn** (giống VS Code): shell thật trong thư mục project, gõ lệnh tay, mở nhiều terminal. Chạy `npm run dev` xong có tab **Preview** xem trang web ngay trong app.
 - **Theme** sáng / tối / theo hệ thống.
 - **Chạy bằng một lệnh.** Trên macOS app mở thành cửa sổ native riêng. Đóng cửa sổ là app tắt.
 
@@ -34,10 +35,17 @@ Giao diện gồm ba cột:
 | **Claude Code CLI** | `npm i -g @anthropic-ai/claude-code`, rồi chạy `claude` một lần để đăng nhập |
 | **Codex CLI** | `npm i -g @openai/codex`, rồi `codex login`. Nên dùng bản mới để có đủ model |
 | macOS (khuyến nghị) | Có Xcode Command Line Tools (`xcode-select --install`) thì app mở thành cửa sổ native |
+| Python 3 (macOS/Linux) | Dùng cho Terminal (tạo PTY, không cần cài module native). macOS đã có sẵn |
 
 Chỉ cần một trong hai CLI là dùng được. Nếu có cả hai thì mới giao việc qua lại được.
 
-Không có Xcode Command Line Tools thì app mở bằng Chrome/Edge/Brave ở chế độ `--app` (cửa sổ riêng, không thanh địa chỉ). Không có các trình duyệt đó thì mở bằng trình duyệt mặc định. Trên Linux cũng chạy được theo cách này.
+Không có Xcode Command Line Tools thì app mở bằng Chrome/Edge/Brave ở chế độ `--app` (cửa sổ riêng, không thanh địa chỉ). Không có các trình duyệt đó thì mở bằng trình duyệt mặc định.
+
+**Windows / Linux:**
+- Chạy được, app mở bằng **Microsoft Edge** (Windows có sẵn) hoặc Chrome ở chế độ `--app`.
+- Cài Claude Code / Codex bằng npm hay bằng bộ cài `.exe` đều được.
+- Hộp thoại chọn thư mục dùng PowerShell (Windows) hoặc `zenity` (Linux).
+- Terminal trên Windows chạy PowerShell ở **chế độ cơ bản**: gõ lệnh rồi Enter, Ctrl+C sẽ khởi động lại shell. Các chương trình toàn màn hình như `vim` không chạy được trong chế độ này.
 
 ## Cài đặt
 
@@ -125,7 +133,15 @@ Số liệu tự làm mới khi mở app, mỗi 5 phút, và sau mỗi lượt c
 - Claude dùng lệnh `claude -p /usage`.
 - Codex dùng API `account/rateLimits/read` của Codex CLI.
 
-### 5. Làm việc với file
+### 5. Terminal và Preview
+
+- Mở/đóng panel Terminal: **⌃`** hoặc **⌘J**, hoặc nút terminal ở góc phải thanh tab. Kéo mép trên để đổi chiều cao.
+- Mỗi terminal là một shell thật (zsh/bash của anh, có đủ PATH, nvm, alias…) mở sẵn trong thư mục project. Gõ gì cũng được: `npm run dev`, `git status`, `vim`, `htop`. **Ctrl+C** để dừng lệnh.
+- **+** để mở thêm terminal. Tải lại cửa sổ thì terminal vẫn còn, lịch sử được hiện lại. Đóng app thì mọi terminal và dev server trong đó tắt theo, không chiếm port.
+- Chạy dev server xong, app tự nhận ra địa chỉ kiểu `http://localhost:3000` và thêm tab **Preview** để xem trang ngay trong app. Bấm link localhost trong terminal cũng mở Preview.
+- **Gửi cho agent:** gửi đoạn anh đang bôi đen (hoặc 60 dòng cuối) vào ô chat, rồi hỏi Claude/Codex vì sao lỗi.
+
+### 6. Làm việc với file
 
 - Bấm file trong Explorer để mở bằng editor Monaco. **⌘S** để lưu.
 - File đã thay đổi so với git có nút **Diff** để so với HEAD.
@@ -140,6 +156,7 @@ Số liệu tự làm mới khi mở app, mỗi 5 phút, và sau mỗi lượt c
 | ⌘B | Ẩn/hiện sidebar trái |
 | ⇧⌘E | Ẩn/hiện Explorer |
 | ⌘S | Lưu file đang mở |
+| ⌃` hoặc ⌘J | Ẩn/hiện Terminal |
 | Enter / Shift+Enter | Gửi / xuống dòng |
 | ⌘Enter | Chạy pipeline (trong hộp nhập task) |
 | ⌘R | Tải lại cửa sổ (app native) |
@@ -206,6 +223,7 @@ server/                 Node, chạy .ts trực tiếp
   sessions.ts           đọc session gốc trong ~/.claude và ~/.codex
   usage.ts              usage 5h/tuần, bank reset của Codex
   projects.ts           cây file, git status, theo dõi thay đổi file
+  terminals.ts          terminal tương tác (qua pty_host.py)
   roles.ts              vai trò và pipeline mặc định
 shared/types.ts         kiểu dữ liệu dùng chung server ↔ UI
 ui/                     React + Vite + Tailwind + React Flow + Monaco

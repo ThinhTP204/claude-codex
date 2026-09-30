@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 import type { AgentUsage, ResetCredit, UsageWindow } from '../shared/types.ts';
 import { run } from './catalog.ts';
+import { resolveCommand } from './platform.ts';
 
 // ---------------- Claude: `claude -p /usage` (local command, no model call, 0 tokens) ----------------
 
@@ -59,7 +60,8 @@ async function claudeUsage(): Promise<AgentUsage> {
 /** Start `codex app-server`, run one or more requests, then shut it down. */
 async function codexRpc<T = any>(method: string, params: unknown): Promise<T> {
   return new Promise((resolve, reject) => {
-    const p = spawn('codex', ['app-server'], { stdio: ['pipe', 'pipe', 'ignore'], cwd: os.tmpdir() });
+    const { cmd, pre } = resolveCommand('codex');
+    const p = spawn(cmd, [...pre, 'app-server'], { stdio: ['pipe', 'pipe', 'ignore'], cwd: os.tmpdir(), windowsHide: true });
     const rl = readline.createInterface({ input: p.stdout });
     const send = (m: unknown) => p.stdin.write(JSON.stringify(m) + '\n');
     const done = (fn: () => void) => {

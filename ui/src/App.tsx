@@ -1,6 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { MessageSquare, PanelLeftOpen, PanelRightOpen, Workflow, X } from 'lucide-react';
-import { closeTab, LS, newConv, setState, useStore } from './store.ts';
+import { Globe, MessageSquare, PanelLeftOpen, PanelRightOpen, SquareTerminal, Workflow, X } from 'lucide-react';
+import { closeTab, LS, newConv, setState, toggleTermPanel, useStore } from './store.ts';
+import { TerminalPanel } from './components/TerminalPanel.tsx';
+import { PreviewView } from './components/PreviewView.tsx';
 import { Sidebar } from './components/Sidebar.tsx';
 import { ChatView } from './components/ChatView.tsx';
 import { Explorer, FileIcon } from './components/Explorer.tsx';
@@ -50,6 +52,32 @@ function Resizer({ onDrag, side }: { onDrag: (dx: number) => void; side: 'left' 
   );
 }
 
+function RowResizer({ onDrag }: { onDrag: (dy: number) => void }) {
+  const last = useRef(0);
+  return (
+    <div
+      className="group relative z-10 h-0 shrink-0 cursor-row-resize"
+      onMouseDown={(e) => {
+        last.current = e.clientY;
+        const move = (ev: MouseEvent) => {
+          onDrag(ev.clientY - last.current);
+          last.current = ev.clientY;
+        };
+        const up = () => {
+          document.removeEventListener('mousemove', move);
+          document.removeEventListener('mouseup', up);
+          document.body.style.cursor = '';
+        };
+        document.body.style.cursor = 'row-resize';
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+      }}
+    >
+      <div className="absolute inset-x-0 -top-1 h-2 group-hover:bg-accent/30" />
+    </div>
+  );
+}
+
 export function App() {
   const noToken = useStore((s) => s.noToken);
   const tabs = useStore((s) => s.tabs);
@@ -62,6 +90,8 @@ export function App() {
   const [rightW, setRightW] = useWidth('rightW', 280);
   const [leftOpen, setLeftOpen] = useWidth('leftOpen', 1);
   const [rightOpen, setRightOpen] = useWidth('rightOpen', 1);
+  const [termH, setTermH] = useWidth('termH', 280);
+  const termOpen = useStore((s) => s.termOpen);
   useOpenShortcut();
   // keep the flow editor mounted after first open so unsaved edits survive tab switches
   const [flowSeen, setFlowSeen] = useState(false);
@@ -78,6 +108,11 @@ export function App() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') {
         e.preventDefault();
         newConv();
+      }
+      // VS Code: ⌃` or ⌘J toggles the terminal panel
+      if ((e.ctrlKey && e.key === '`') || (e.metaKey && e.key.toLowerCase() === 'j')) {
+        e.preventDefault();
+        toggleTermPanel();
       }
       if ((e.metaKey || e.ctrlKey) && e.key === 'e' && e.shiftKey) {
         e.preventDefault();
@@ -135,6 +170,9 @@ export function App() {
               } else if (t.kind === 'flow') {
                 icon = <Workflow size={14} />;
                 label = 'Flow';
+              } else if (t.kind === 'preview') {
+                icon = <Globe size={14} className="text-ok" />;
+                label = `Preview · ${t.url.replace(/^https?:\/\//, '')}`;
               } else {
                 icon = <FileIcon name={t.path} size={14} />;
                 label = t.path.split('/').pop()!;
@@ -143,7 +181,7 @@ export function App() {
                 <div
                   key={t.id}
                   onClick={() => setState({ activeTab: t.id })}
-                  onAuxClick={(e) => e.button === 1 && t.kind === 'file' && closeTab(t.id)}
+                  onAuxClick={(e) => e.button === 1 && (t.kind === 'file' || t.kind === 'preview') && closeTab(t.id)}
                   title={t.kind === 'file' ? t.path : label}
                   className={cx(
                     'group relative flex h-9 max-w-[240px] shrink-0 cursor-pointer items-center gap-1.5 border-r border-line px-3 text-[13px]',
@@ -160,7 +198,7 @@ export function App() {
                   </span>
                   {t.kind === 'flow' && running && <Spinner size={11} className="text-accent" />}
                   {t.kind === 'flow' && awaiting && <span className="h-1.5 w-1.5 rounded-full bg-warn" />}
-                  {t.kind === 'file' && (
+                  {(t.kind === 'file' || t.kind === 'preview') && (
                     <button
                       type="button"
                       onClick={(e) => {
@@ -176,6 +214,14 @@ export function App() {
               );
             })}
           </div>
+          <button
+            type="button"
+            onClick={() => toggleTermPanel()}
+            className={cx('mb-1.5 ml-1 rounded-md p-1 hover:bg-hover hover:text-fg', termOpen ? 'text-fg' : 'text-muted')}
+            title="Terminal (⌃` hoặc ⌘J)"
+          >
+            <SquareTerminal size={16} />
+          </button>
           {!rightOpen && (
             <button type="button" onClick={() => setRightOpen(1)} className="mb-1.5 ml-1 rounded-md p-1 text-muted hover:bg-hover hover:text-fg" title="Mở Explorer (⇧⌘E)">
               <PanelRightOpen size={16} />
@@ -189,12 +235,20 @@ export function App() {
                 <ChatView />
               ) : (
                 <Suspense fallback={<div className="grid h-full place-items-center"><Spinner /></div>}>
-                  {t.kind === 'flow' ? flowSeen ? <FlowView /> : null : <FileView path={t.path} />}
+                  {t.kind === 'flow' ? flowSeen ? <FlowView /> : null : t.kind === 'preview' ? <PreviewView url={t.url} /> : <FileView path={t.path} />}
                 </Suspense>
               )}
             </div>
           ))}
         </div>
+        {termOpen && (
+          <>
+            <RowResizer onDrag={(dy) => setTermH(Math.max(120, Math.min(window.innerHeight - 200, termH - dy)))} />
+            <div style={{ height: termH }} className="shrink-0 border-t border-line">
+              <TerminalPanel />
+            </div>
+          </>
+        )}
       </main>
 
       {rightOpen ? (

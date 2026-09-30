@@ -5,6 +5,7 @@ import { watch, type FSWatcher } from 'chokidar';
 import type { FsEntry } from '../shared/types.ts';
 import { dataFile, readJson, realpathSafe, writeJson } from './store.ts';
 import { run } from './catalog.ts';
+import { isWin, toPosix } from './platform.ts';
 
 const RECENT_FILE = dataFile('recent.json');
 const ALWAYS_HIDDEN = new Set(['.git', '.DS_Store']);
@@ -27,15 +28,27 @@ export function forgetProject(p: string): string[] {
   return list;
 }
 
-/** Native macOS folder picker */
+/** Native folder picker for the current OS */
 export function pickFolder(): Promise<string | null> {
+  const [cmd, args] =
+    process.platform === 'darwin'
+      ? ['osascript', ['-e', 'POSIX path of (choose folder with prompt "Chọn thư mục project")']]
+      : isWin
+        ? [
+            'powershell.exe',
+            [
+              '-NoProfile',
+              '-STA',
+              '-Command',
+              "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Chọn thư mục project'; if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }",
+            ],
+          ]
+        : ['zenity', ['--file-selection', '--directory', '--title=Chọn thư mục project']];
   return new Promise((resolve) => {
-    execFile(
-      'osascript',
-      ['-e', 'POSIX path of (choose folder with prompt "Chọn thư mục project")'],
-      { timeout: 5 * 60_000 },
-      (err, stdout) => resolve(err ? null : stdout.trim().replace(/\/$/, '') || null),
-    );
+    execFile(cmd as string, args as string[], { timeout: 5 * 60_000, windowsHide: true }, (err, stdout) => {
+      const out = String(stdout).trim();
+      resolve(err || !out ? null : out.replace(/[\\/]$/, '') || null);
+    });
   });
 }
 
@@ -72,7 +85,7 @@ async function gitIgnored(root: string, rels: string[]): Promise<Set<string>> {
 export async function listDir(root: string, rel: string): Promise<FsEntry[]> {
   const dir = safeJoin(root, rel);
   const entries = fs.readdirSync(dir, { withFileTypes: true }).filter((e) => !ALWAYS_HIDDEN.has(e.name));
-  const rels = entries.map((e) => path.join(rel, e.name));
+  const rels = entries.map((e) => (rel ? `${rel}/${e.name}` : e.name));
   const ignored = await gitIgnored(root, rels);
   const git = (await gitPrefix(root)) !== null;
   // Like VS Code: ignored entries stay visible (dimmed) instead of disappearing.
@@ -156,7 +169,7 @@ export function watchProject(root: string, onChange: (paths: string[]) => void):
       depth: 12,
     });
     w.on('all', (_ev, p) => {
-      pending.add(path.relative(root, p));
+      pending.add(toPosix(path.relative(root, p)));
       clearTimeout(timer);
       timer = setTimeout(() => {
         const paths = [...pending];

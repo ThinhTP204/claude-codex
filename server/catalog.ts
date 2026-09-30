@@ -2,6 +2,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import type { AgentHealth, Catalog, Health, ModelInfo } from '../shared/types.ts';
 import { HOME, readJson } from './store.ts';
+import { resolveCommand } from './platform.ts';
 
 const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
@@ -45,7 +46,8 @@ export function getCatalog(): Catalog {
 
 export function run(bin: string, args: string[], timeoutMs = 15000, cwd?: string): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    execFile(bin, args, { timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024, cwd }, (err, stdout, stderr) => {
+    const { cmd, pre } = resolveCommand(bin);
+    execFile(cmd, [...pre, ...args], { timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024, cwd, windowsHide: true }, (err, stdout, stderr) => {
       const code = err ? (typeof (err as NodeJS.ErrnoException).code === 'number' ? Number((err as NodeJS.ErrnoException).code) : 1) : 0;
       resolve({ code, stdout: String(stdout), stderr: String(stderr) || (err && !stdout ? String(err.message) : '') });
     });

@@ -324,6 +324,21 @@ function Composer({ autoFocus }: { autoFocus?: boolean }) {
   }, [text]);
   useEffect(() => ta.current?.focus(), [conv?.id, autoFocus]);
 
+  // "Gửi cho agent" from the terminal appends to whatever is being typed
+  const insert = useStore((s) => s.composerInsert);
+  const seenInsert = useRef(insert?.n ?? 0);
+  useEffect(() => {
+    if (!insert || insert.n === seenInsert.current) return;
+    seenInsert.current = insert.n;
+    setText((t) => (t.trim() ? `${t.trimEnd()}\n\n${insert.text}` : insert.text));
+    requestAnimationFrame(() => {
+      const el = ta.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+  }, [insert]);
+
   const send = async () => {
     const t = text.trim();
     if (!t || running) return;

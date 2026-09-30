@@ -241,8 +241,23 @@ export type TurnEvent =
   | { t: 'delta'; text: string }
   | { t: 'block'; block: Block };
 
+/** An interactive shell in the Terminal panel */
+export interface TermInfo {
+  id: string;
+  projectPath: string;
+  title: string;
+  alive: boolean;
+  exitCode?: number;
+  /** false = "basic" mode (Windows): no PTY, the UI echoes and edits the input line */
+  pty: boolean;
+  createdAt: number;
+}
+
 export type ServerMessage =
   | { type: 'conv'; conv: Conversation }
   | { type: 'turn'; convId: string; turnId: string; ev: TurnEvent }
   | { type: 'list'; projectPath: string }
-  | { type: 'fs'; root: string; paths: string[] };
+  | { type: 'fs'; root: string; paths: string[] }
+  | { type: 'term:data'; id: string; data: string }
+  | { type: 'term:exit'; id: string; code?: number }
+  | { type: 'term:closed'; id: string };

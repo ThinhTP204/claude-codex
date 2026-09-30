@@ -34,6 +34,23 @@
   --hl-number: #b35c13;
   --hl-title: #2d63b8;
   --hl-var: #7a4fb0;
+  --ansi-black: #3b3a36;
+  --ansi-red: #c4302b;
+  --ansi-green: #1a7f37;
+  --ansi-yellow: #9a6700;
+  --ansi-blue: #0969da;
+  --ansi-magenta: #8250df;
+  --ansi-cyan: #1b7c83;
+  --ansi-white: #6e6c66;
+  --ansi-bright-black: #8a8778;
+  --ansi-bright-red: #d9433a;
+  --ansi-bright-green: #2f9e44;
+  --ansi-bright-yellow: #b08800;
+  --ansi-bright-blue: #3b7dd8;
+  --ansi-bright-magenta: #a371f7;
+  --ansi-bright-cyan: #3192aa;
+  --ansi-bright-white: #1f1e1d;
+  --term-bg: #fbfaf7;
   color-scheme: light;
 }
 
@@ -64,6 +81,23 @@
   --hl-number: #f0a45d;
   --hl-title: #79b0ff;
   --hl-var: #c9a2f5;
+  --ansi-black: #6e6c66;
+  --ansi-red: #f47067;
+  --ansi-green: #57ab5a;
+  --ansi-yellow: #c69026;
+  --ansi-blue: #539bf5;
+  --ansi-magenta: #b083f0;
+  --ansi-cyan: #39c5cf;
+  --ansi-white: #cdccc6;
+  --ansi-bright-black: #8a8880;
+  --ansi-bright-red: #ff938a;
+  --ansi-bright-green: #6bc46d;
+  --ansi-bright-yellow: #daaa3f;
+  --ansi-bright-blue: #6cb6ff;
+  --ansi-bright-magenta: #dcbdfb;
+  --ansi-bright-cyan: #56d4dd;
+  --ansi-bright-white: #f2f1ec;
+  --term-bg: #1c1c1a;
   color-scheme: dark;
 }
 
@@ -94,6 +128,23 @@
     --hl-number: #f0a45d;
     --hl-title: #79b0ff;
     --hl-var: #c9a2f5;
+    --ansi-black: #6e6c66;
+    --ansi-red: #f47067;
+    --ansi-green: #57ab5a;
+    --ansi-yellow: #c69026;
+    --ansi-blue: #539bf5;
+    --ansi-magenta: #b083f0;
+    --ansi-cyan: #39c5cf;
+    --ansi-white: #cdccc6;
+    --ansi-bright-black: #8a8880;
+    --ansi-bright-red: #ff938a;
+    --ansi-bright-green: #6bc46d;
+    --ansi-bright-yellow: #daaa3f;
+    --ansi-bright-blue: #6cb6ff;
+    --ansi-bright-magenta: #dcbdfb;
+    --ansi-bright-cyan: #56d4dd;
+    --ansi-bright-white: #f2f1ec;
+    --term-bg: #1c1c1a;
     color-scheme: dark;
   }
 }
@@ -120,6 +171,7 @@
   --color-info: var(--info);
   --color-code: var(--code-bg);
   --color-explorer: var(--explorer);
+  --color-term: var(--term-bg);
   --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
   --font-mono: 'SF Mono', ui-monospace, Menlo, Monaco, Consolas, monospace;
 }

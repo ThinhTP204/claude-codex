@@ -7,6 +7,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import type { Agent, Pipeline, Role, RunConfig, ServerMessage } from '../shared/types.ts';
 import { getCatalog, getHealth } from './catalog.ts';
 import { consumeCodexReset, getUsage } from './usage.ts';
+import { createTerm, killTerm, listTerms, resizeTerm, setTermBroadcast, writeTerm } from './terminals.ts';
 import { startRun } from './runner.ts';
 import {
   createConv,
@@ -70,8 +71,9 @@ export function start(opts: StartOptions): Promise<http.Server> {
     for (const c of clients) if (c.readyState === 1) c.send(s);
   };
   setBroadcast(send);
+  setTermBroadcast(send);
 
-  const allowedHost = (h?: string) => !!h && /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(h);
+  const allowedHost = (h?: string) => !!h && /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(h);
 
   function authorized(req: http.IncomingMessage, url: URL): boolean {
     const t = req.headers['x-agentdesk-token'] || url.searchParams.get('token');
@@ -106,6 +108,17 @@ export function start(opts: StartOptions): Promise<http.Server> {
       });
       const r = await h.promise;
       return { ok: r.ok && /pong/i.test(r.finalText), text: r.finalText, error: r.error, durationMs: r.durationMs, usage: r.usage };
+    }
+
+    // ---- terminals (keystrokes and resizes go over the websocket) ----
+    if (m === 'GET' && p === '/terms') return listTerms(project());
+    if (m === 'POST' && p === '/terms') {
+      const b = await body<{ cols: number; rows: number }>(req);
+      return createTerm(project(), b.cols, b.rows);
+    }
+    if (m === 'DELETE' && (mm = /^\/terms\/([^/]+)$/.exec(p))) {
+      killTerm(mm[1]);
+      return { ok: true };
     }
 
     // ---- usage limits ----
@@ -225,7 +238,7 @@ export function start(opts: StartOptions): Promise<http.Server> {
   server.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url || '/', 'http://127.0.0.1');
     const origin = req.headers.origin || '';
-    const originOk = !origin || /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin);
+    const originOk = !origin || /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(origin);
     if (url.pathname !== '/ws' || !authorized(req, url) || !originOk) {
       socket.destroy();
       return;
@@ -239,6 +252,8 @@ export function start(opts: StartOptions): Promise<http.Server> {
     ws.on('message', (raw) => {
       try {
         const msg = JSON.parse(String(raw));
+        if (msg.type === 'term:input') return writeTerm(msg.id, String(msg.data));
+        if (msg.type === 'term:resize') return resizeTerm(msg.id, Number(msg.cols), Number(msg.rows));
         if (msg.type === 'watch' && typeof msg.project === 'string' && fs.existsSync(msg.project)) {
           unwatch.get(ws)?.();
           unwatch.set(
@@ -270,8 +285,22 @@ export function start(opts: StartOptions): Promise<http.Server> {
     server.once('error', reject);
     server.listen(opts.port, '127.0.0.1', () => {
       const port = (server.address() as { port: number }).port;
-      opts.onReady?.(`http://127.0.0.1:${port}/?token=${token}`);
-      resolve(server);
+      // `localhost` may resolve to IPv6 first: answer there too (loopback only, never the network)
+      const v6 = http.createServer((req, res) => server.emit('request', req, res));
+      v6.on('upgrade', (req, socket, head) => server.emit('upgrade', req, socket, head));
+      const ready = (host: string) => {
+        opts.onReady?.(`http://${host}:${port}/?token=${token}`);
+        resolve(server);
+      };
+      // Serve the UI on "localhost" so the Preview tab (a localhost dev server) is same-site:
+      // otherwise WebKit treats it as third-party and drops its cookies (login loops, blank pages).
+      v6.once('listening', () => ready('localhost'));
+      v6.once('error', (e: NodeJS.ErrnoException) => {
+        // no IPv6 loopback: localhost falls back to 127.0.0.1, fine.
+        // [::1]:port taken by another app: "localhost" could reach it, so stay on 127.0.0.1.
+        ready(e.code === 'EADDRINUSE' ? '127.0.0.1' : 'localhost');
+      });
+      v6.listen(port, '::1');
     });
   });
 }

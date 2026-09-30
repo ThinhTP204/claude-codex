@@ -1,8 +1,13 @@
 import { useSyncExternalStore } from 'react';
-import type { Block, Catalog, Conversation, ConversationSummary, Health, Pipeline, Role, RunConfig, ServerMessage, UsageReport } from '../../shared/types.ts';
+import type { Block, Catalog, Conversation, ConversationSummary, Health, Pipeline, Role, RunConfig, ServerMessage, TermInfo, UsageReport } from '../../shared/types.ts';
+import { disposeTerm, ensureTerm, setLinkHandler, writeTerm } from './terminals.ts';
 import { api, connectWs, qs, TOKEN, URL_PROJECT, wsSend } from './api.ts';
 
-export type Tab = { id: string; kind: 'chat' } | { id: string; kind: 'flow' } | { id: string; kind: 'file'; path: string };
+export type Tab =
+  | { id: string; kind: 'chat' }
+  | { id: string; kind: 'flow' }
+  | { id: string; kind: 'preview'; url: string }
+  | { id: string; kind: 'file'; path: string };
 
 export interface State {
   project?: string;
@@ -31,6 +36,14 @@ export interface State {
   convLoading: boolean;
   usage?: UsageReport;
   usageLoading: boolean;
+  /** bottom Terminal panel */
+  termOpen: boolean;
+  terms: TermInfo[];
+  activeTerm?: string;
+  /** local URL printed in a terminal (dev server), offered as a Preview */
+  devUrl?: string;
+  /** text pushed into the chat composer ("send to agent") */
+  composerInsert?: { text: string; n: number };
 }
 
 const LS = {
@@ -72,6 +85,8 @@ let state: State = {
   noToken: !TOKEN,
   convLoading: false,
   usageLoading: false,
+  termOpen: LS.get('termOpen', false),
+  terms: [],
 };
 
 const listeners = new Set<() => void>();
@@ -131,13 +146,17 @@ export async function openProject(path: string): Promise<void> {
     convId: undefined,
     conv: undefined,
     convList: [],
-    tabs: s.tabs.filter((t) => t.kind !== 'file'),
+    tabs: s.tabs.filter((t) => t.kind !== 'file' && t.kind !== 'preview'),
+    terms: [],
+    activeTerm: undefined,
+    devUrl: undefined,
     activeTab: 'chat',
     touched: {},
   }));
   wsSend({ type: 'watch', project: r.path });
   void refreshList();
   void refreshGit();
+  void loadTerms();
   const last = LS.get<string | undefined>(`conv:${r.path}`, undefined);
   if (last) void openConv(last);
 }
@@ -224,6 +243,72 @@ export async function refreshHealth(force = false): Promise<void> {
   if (h) setState({ health: h });
 }
 
+// ---------------- terminal panel ----------------
+
+const URL_RE = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\])(?::\d{2,5})(?:\/[^\s'"`)\]]*)?/i;
+const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07/g;
+const tails: Record<string, string> = {};
+
+/** Spot "Local: http://localhost:5173" style lines and offer a Preview. */
+function detectUrl(id: string, data: string) {
+  tails[id] = ((tails[id] || '') + data).slice(-2000);
+  const m = URL_RE.exec(tails[id].replace(ANSI_RE, ''));
+  if (!m) return;
+  const url = m[0].replace(/\/\/(0\.0\.0\.0|127\.0\.0\.1|\[::1?\])/, '//localhost').replace(/[.,;:]+$/, '');
+  tails[id] = '';
+  if (url !== state.devUrl) {
+    setState({ devUrl: url });
+    ensurePreview(url, false);
+  }
+}
+
+async function loadTerms(): Promise<void> {
+  const project = state.project;
+  if (!project) return;
+  const list = await api<(TermInfo & { buffer: string })[]>('GET', `/terms${qs({ project })}`).catch(() => []);
+  if (project !== state.project) return;
+  for (const t of list) ensureTerm(t.id, t.buffer, t.pty);
+  setState({ terms: list.map(({ buffer: _b, ...t }) => t), activeTerm: list[list.length - 1]?.id });
+}
+
+export async function newTerm(): Promise<void> {
+  if (!state.project) return;
+  const t = await safe(api<TermInfo>('POST', `/terms${qs({ project: state.project })}`, { cols: 100, rows: 24 }));
+  if (!t) return;
+  ensureTerm(t.id, '', t.pty);
+  setState((s) => ({ terms: [...s.terms, t], activeTerm: t.id, termOpen: true }));
+  LS.set('termOpen', true);
+}
+
+export async function closeTerm(id: string): Promise<void> {
+  await safe(api('DELETE', `/terms/${id}`));
+}
+
+export function toggleTermPanel(open = !state.termOpen): void {
+  LS.set('termOpen', open);
+  setState({ termOpen: open });
+  if (open && !state.terms.length) void newTerm();
+}
+
+/** Add (or retarget) the Preview tab for a dev-server URL. */
+export function ensurePreview(url: string, focus: boolean): void {
+  setState((s) => {
+    const has = s.tabs.some((t) => t.kind === 'preview');
+    const tabs = has
+      ? s.tabs.map((t) => (t.kind === 'preview' ? { ...t, url } : t))
+      : [...s.tabs.slice(0, 2), { id: 'preview', kind: 'preview' as const, url }, ...s.tabs.slice(2)];
+    return { tabs, activeTab: focus ? 'preview' : s.activeTab };
+  });
+}
+
+// localhost links clicked inside the terminal open in the Preview tab
+setLinkHandler((url) => (URL_RE.test(url) ? ensurePreview(url.replace(/\/\/(0\.0\.0\.0|127\.0\.0\.1|\[::1?\])/, '//localhost'), true) : window.open(url, '_blank')));
+
+/** Put text into the chat composer and switch to the chat tab. */
+export function insertIntoComposer(text: string): void {
+  setState((s) => ({ composerInsert: { text, n: (s.composerInsert?.n || 0) + 1 }, activeTab: 'chat' }));
+}
+
 export async function refreshUsage(force = false): Promise<void> {
   setState({ usageLoading: true });
   const u = await api<UsageReport>('GET', `/usage${force ? '?force=1' : ''}`).catch(() => undefined);
@@ -288,6 +373,19 @@ let gitTimer: ReturnType<typeof setTimeout> | undefined;
 
 function onMessage(msg: ServerMessage): void {
   switch (msg.type) {
+    case 'term:data':
+      writeTerm(msg.id, msg.data);
+      detectUrl(msg.id, msg.data);
+      break;
+    case 'term:exit':
+      setState((s) => ({ terms: s.terms.map((t) => (t.id === msg.id ? { ...t, alive: false, exitCode: msg.code } : t)) }));
+      break;
+    case 'term:closed': {
+      disposeTerm(msg.id);
+      const terms = state.terms.filter((t) => t.id !== msg.id);
+      setState({ terms, activeTerm: state.activeTerm === msg.id ? terms[terms.length - 1]?.id : state.activeTerm });
+      break;
+    }
     case 'conv':
       trackRunning(msg.conv);
       if (msg.conv.id === state.convId) {

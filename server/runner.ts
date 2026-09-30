@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import readline from 'node:readline';
 import type { Block, RunConfig, Usage } from '../shared/types.ts';
+import { killTree, resolveCommand, spawnOpts } from './platform.ts';
 
 export interface RunEvents {
   onSession(id: string, model?: string): void;
@@ -100,7 +101,8 @@ export function startRun(cfg: RunConfig, prompt: string, cwd: string, resume: st
   let stderr = '';
 
   const promise = new Promise<RunResult>((resolve) => {
-    child = spawn(bin, args, { cwd, env: process.env, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    const { cmd, pre } = resolveCommand(bin);
+    child = spawn(cmd, [...pre, ...args], { cwd, env: process.env, ...spawnOpts, stdio: ['pipe', 'pipe', 'pipe'] });
     child.stdin!.on('error', () => {});
     child.stdin!.end(fullPrompt);
     child.stderr!.on('data', (d) => {
@@ -287,11 +289,7 @@ export function startRun(cfg: RunConfig, prompt: string, cwd: string, resume: st
     promise,
     stop() {
       stopped = true;
-      try {
-        process.kill(-child.pid!, 'SIGTERM');
-      } catch {
-        child?.kill('SIGTERM');
-      }
+      killTree(child);
     },
   };
 }
