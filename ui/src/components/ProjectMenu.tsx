@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, ChevronDown, ChevronsUpDown, Folder, FolderOpen, FolderPlus, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronsUpDown, Folder, FolderOpen, FolderPlus, FolderTree, X } from 'lucide-react';
 import { api } from '../api.ts';
 import { openProject, pickProject, safe, setState, useStore } from '../store.ts';
 import { Popover, cx, inputCls } from './ui.tsx';
@@ -45,6 +45,17 @@ function MenuContent({ close }: { close: () => void }) {
         <FolderPlus size={15} className="text-accent" />
         Mở thư mục khác…
         <kbd className="ml-auto text-[11px] font-normal text-faint">⌘O</kbd>
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          close();
+          setState({ showFolderBrowser: true });
+        }}
+        className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] text-muted hover:bg-hover hover:text-fg"
+      >
+        <FolderTree size={15} />
+        Duyệt thư mục trong app…
       </button>
       {typing ? (
         <form

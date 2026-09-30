@@ -38,6 +38,9 @@ export interface State {
   usageLoading: boolean;
   /** bottom Terminal panel */
   termOpen: boolean;
+  /** in-app folder picker (default on Windows, fallback elsewhere) */
+  showFolderBrowser: boolean;
+  platform?: string;
   terms: TermInfo[];
   activeTerm?: string;
   /** local URL printed in a terminal (dev server), offered as a Preview */
@@ -86,6 +89,7 @@ let state: State = {
   convLoading: false,
   usageLoading: false,
   termOpen: LS.get('termOpen', false),
+  showFolderBrowser: false,
   terms: [],
 };
 
@@ -161,8 +165,17 @@ export async function openProject(path: string): Promise<void> {
   if (last) void openConv(last);
 }
 
+/** Choose a project folder: native dialog on macOS/Linux, AgentDesk's own browser on Windows. */
 export async function pickProject(): Promise<void> {
-  const r = await safe(api<{ path: string | null }>('POST', '/projects/pick'));
+  if (state.platform === 'win32') {
+    setState({ showFolderBrowser: true });
+    return;
+  }
+  const r = await safe(api<{ path: string | null; error?: string }>('POST', '/projects/pick'));
+  if (r?.error) {
+    toast(`Không mở được hộp thoại hệ thống (${r.error}), dùng trình chọn thư mục của AgentDesk.`, 'info');
+    setState({ showFolderBrowser: true });
+  }
   if (r?.path) await openProject(r.path);
 }
 
@@ -436,6 +449,7 @@ export function boot(): void {
     void refreshList();
   });
   void (async () => {
+    void api<{ platform: string }>('GET', '/env').then((e) => setState({ platform: e.platform })).catch(() => {});
     const [catalog, roles, pipelines, recent] = await Promise.all([
       safe(api<Catalog>('GET', '/catalog')),
       safe(api<Role[]>('GET', '/roles')),

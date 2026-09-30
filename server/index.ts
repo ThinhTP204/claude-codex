@@ -1,5 +1,6 @@
 import http from 'node:http';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -22,7 +23,7 @@ import {
 } from './conversations.ts';
 import { approve, rerun, startPipeline, stopPipeline } from './pipeline.ts';
 import { deletePipeline, getPipelines, getRoles, savePipeline, saveRoles, DEFAULT_ROLES } from './roles.ts';
-import { forgetProject, gitHead, gitStatus, listDir, openProject, pickFolder, readFile, recentProjects, watchProject, writeFile } from './projects.ts';
+import { browseDirs, forgetProject, gitHead, gitStatus, listDir, openProject, pickFolder, readFile, recentProjects, watchProject, writeFile } from './projects.ts';
 
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 const MIME: Record<string, string> = {
@@ -143,8 +144,10 @@ export function start(opts: StartOptions): Promise<http.Server> {
     if (m === 'GET' && p === '/projects') return recentProjects();
     if (m === 'POST' && p === '/projects/pick') {
       const picked = await pickFolder();
-      return { path: picked ? openProject(picked) : null };
+      return { path: picked.path ? openProject(picked.path) : null, error: picked.error };
     }
+    if (m === 'GET' && p === '/browse') return browseDirs(q('dir') || undefined, q('hidden') === '1');
+    if (m === 'GET' && p === '/env') return { platform: process.platform, home: os.homedir(), sep: path.sep };
     if (m === 'POST' && p === '/projects/forget') return forgetProject((await body<{ path: string }>(req)).path);
     if (m === 'POST' && p === '/projects/open') return { path: openProject((await body<{ path: string }>(req)).path) };
     if (m === 'GET' && p === '/fs/list') return listDir(project(), q('dir'));

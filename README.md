@@ -44,7 +44,7 @@ Không có Xcode Command Line Tools thì app mở bằng Chrome/Edge/Brave ở c
 **Windows / Linux:**
 - Chạy được, app mở bằng **Microsoft Edge** (Windows có sẵn) hoặc Chrome ở chế độ `--app`.
 - Cài Claude Code / Codex bằng npm hay bằng bộ cài `.exe` đều được.
-- Hộp thoại chọn thư mục dùng PowerShell (Windows) hoặc `zenity` (Linux).
+- Trên Windows, **Mở thư mục** dùng trình chọn thư mục có sẵn trong app (danh sách ổ đĩa C:, D:… và thư mục). Trên Linux dùng hộp thoại `zenity`, không có thì tự chuyển sang trình chọn trong app.
 - Terminal trên Windows chạy PowerShell ở **chế độ cơ bản**: gõ lệnh rồi Enter, Ctrl+C sẽ khởi động lại shell. Các chương trình toàn màn hình như `vim` không chạy được trong chế độ này.
 
 ## Cài đặt
@@ -82,7 +82,8 @@ Không muốn `npm link` thì chạy `npm start` trong thư mục repo.
 ### 1. Chọn project
 
 Bấm ô **PROJECT → Đổi** ở góc trên sidebar trái, hoặc nhấn **⌘O**, hoặc vào menu **File → Mở project…**. Có ba cách chọn:
-- **Mở thư mục khác…** mở hộp thoại chọn thư mục.
+- **Mở thư mục khác…** mở hộp thoại chọn thư mục (trên Windows là trình chọn thư mục trong app).
+- **Duyệt thư mục trong app…** duyệt ổ đĩa và thư mục ngay trong AgentDesk, chạy giống nhau trên mọi máy.
 - **Nhập đường dẫn…** để gõ hoặc dán đường dẫn.
 - **Gần đây** là danh sách project đã mở. Di chuột vào một project rồi bấm × để bỏ khỏi danh sách.
 

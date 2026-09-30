@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn, execFile } from 'node:child_process';
 import { watch, type FSWatcher } from 'chokidar';
@@ -28,28 +29,108 @@ export function forgetProject(p: string): string[] {
   return list;
 }
 
-/** Native folder picker for the current OS */
-export function pickFolder(): Promise<string | null> {
-  const [cmd, args] =
-    process.platform === 'darwin'
-      ? ['osascript', ['-e', 'POSIX path of (choose folder with prompt "Chọn thư mục project")']]
-      : isWin
-        ? [
-            'powershell.exe',
-            [
-              '-NoProfile',
-              '-STA',
-              '-Command',
-              "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Chọn thư mục project'; if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }",
-            ],
-          ]
-        : ['zenity', ['--file-selection', '--directory', '--title=Chọn thư mục project']];
+// Windows: a hidden, always-on-top owner window so the dialog opens in front of the
+// Edge app window instead of behind it; UTF-8 output so Vietnamese paths survive.
+const WIN_PICKER = `
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+[System.Windows.Forms.Application]::EnableVisualStyles()
+$owner = New-Object System.Windows.Forms.Form
+$owner.TopMost = $true
+$owner.ShowInTaskbar = $false
+$owner.StartPosition = 'CenterScreen'
+$owner.Size = New-Object System.Drawing.Size(1, 1)
+$owner.Opacity = 0
+$owner.Show()
+$owner.Activate()
+$d = New-Object System.Windows.Forms.FolderBrowserDialog
+$d.Description = 'Chọn thư mục project'
+$d.ShowNewFolderButton = $true
+$r = $d.ShowDialog($owner)
+$owner.Close()
+if ($r -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.SelectedPath) }
+`;
+
+/** Native folder picker for the current OS. `path: null` without `error` = the user cancelled. */
+export function pickFolder(): Promise<{ path: string | null; error?: string }> {
+  let cmd: string;
+  let args: string[];
+  if (process.platform === 'darwin') {
+    cmd = 'osascript';
+    args = ['-e', 'POSIX path of (choose folder with prompt "Chọn thư mục project")'];
+  } else if (isWin) {
+    // -EncodedCommand (UTF-16LE base64) sidesteps every quoting/encoding problem of -Command
+    cmd = 'powershell.exe';
+    args = ['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(WIN_PICKER, 'utf16le').toString('base64')];
+  } else {
+    cmd = 'zenity';
+    args = ['--file-selection', '--directory', '--title=Chọn thư mục project'];
+  }
   return new Promise((resolve) => {
-    execFile(cmd as string, args as string[], { timeout: 5 * 60_000, windowsHide: true }, (err, stdout) => {
+    execFile(cmd, args, { timeout: 10 * 60_000, windowsHide: true, encoding: 'utf8' }, (err, stdout, stderr) => {
       const out = String(stdout).trim();
-      resolve(err || !out ? null : out.replace(/[\\/]$/, '') || null);
+      if (out) {
+        // keep drive roots like "C:\" intact, drop other trailing slashes
+        return resolve({ path: /^[A-Za-z]:[\\/]$/.test(out) ? out : out.replace(/[\\/]+$/, '') });
+      }
+      if (!err) return resolve({ path: null }); // cancelled
+      const msg = `${stderr || ''} ${err.message}`;
+      // osascript: -128 = user cancelled; zenity: exit 1 = cancelled
+      if (/-128|User canceled/i.test(msg) || (cmd === 'zenity' && Number((err as { code?: unknown }).code) === 1)) {
+        return resolve({ path: null });
+      }
+      const missing = (err as NodeJS.ErrnoException).code === 'ENOENT';
+      resolve({
+        path: null,
+        error: missing ? `Không tìm thấy \`${cmd}\` để mở hộp thoại chọn thư mục` : String(stderr || err.message).trim().slice(0, 300),
+      });
     });
   });
+}
+
+export interface BrowseResult {
+  path: string;
+  parent: string | null;
+  dirs: { name: string; path: string; git: boolean }[];
+  /** quick jumps: home, Desktop, Documents… and drive letters on Windows */
+  places: { name: string; path: string }[];
+}
+
+/** In-app folder browser (works on every OS, no native dialog needed). */
+export function browseDirs(dir?: string, showHidden = false): BrowseResult {
+  const home = os.homedir();
+  const abs = path.resolve((dir || home).replace(/^~(?=$|[\\/])/, home));
+  const entries = fs.readdirSync(abs, { withFileTypes: true });
+  const dirs = entries
+    .filter((e) => {
+      if (!(e.isDirectory() || e.isSymbolicLink())) return false;
+      if (!showHidden && e.name.startsWith('.')) return false;
+      if (isWin && /^(\$Recycle\.Bin|System Volume Information|\$WinREAgent|Config\.Msi)$/i.test(e.name)) return false;
+      try {
+        return fs.statSync(path.join(abs, e.name)).isDirectory();
+      } catch {
+        return false;
+      }
+    })
+    .map((e) => {
+      const full = path.join(abs, e.name);
+      return { name: e.name, path: full, git: fs.existsSync(path.join(full, '.git')) };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+  const parent = path.dirname(abs) === abs ? null : path.dirname(abs);
+  const places = [
+    { name: 'Home', path: home },
+    ...['Desktop', 'Documents', 'Downloads', 'code', 'Projects', 'source/repos']
+      .map((n) => ({ name: n.split('/').pop()!, path: path.join(home, n) }))
+      .filter((p) => fs.existsSync(p.path)),
+  ];
+  if (isWin) {
+    for (const l of 'CDEFGHIJKLMNOPQRSTUVWXYZ') if (fs.existsSync(`${l}:\\`)) places.push({ name: `${l}:`, path: `${l}:\\` });
+  } else {
+    places.push({ name: '/', path: '/' });
+  }
+  return { path: abs, parent, dirs, places };
 }
 
 /** Resolve a project-relative path and refuse anything that escapes the root. */

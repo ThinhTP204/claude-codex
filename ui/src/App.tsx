@@ -7,6 +7,7 @@ import { Sidebar } from './components/Sidebar.tsx';
 import { ChatView } from './components/ChatView.tsx';
 import { Explorer, FileIcon } from './components/Explorer.tsx';
 import { RolesDialog } from './components/RolesDialog.tsx';
+import { FolderBrowser } from './components/FolderBrowser.tsx';
 import { useOpenShortcut } from './components/ProjectMenu.tsx';
 import { cx, Spinner } from './components/ui.tsx';
 
@@ -83,6 +84,7 @@ export function App() {
   const tabs = useStore((s) => s.tabs);
   const activeTab = useStore((s) => s.activeTab);
   const showRoles = useStore((s) => s.showRoles);
+  const showFolderBrowser = useStore((s) => s.showFolderBrowser);
   const toast = useStore((s) => s.toast);
   const conv = useStore((s) => s.conv);
   const gitFiles = useStore((s) => s.git.files);
@@ -261,6 +263,7 @@ export function App() {
       ) : null}
 
       {showRoles && <RolesDialog />}
+      {showFolderBrowser && <FolderBrowser />}
       {toast && (
         <div
           className={cx(
