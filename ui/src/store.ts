@@ -91,6 +91,8 @@ export interface UpdateInfo {
   date?: string;
   packaged?: boolean;
   downloadUrl?: string;
+  payloadUrl?: string;
+  latest?: string;
   behind: number;
   commits: { hash: string; subject: string; date: string }[];
   canRestart: boolean;

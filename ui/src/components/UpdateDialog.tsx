@@ -4,29 +4,42 @@ import { api } from '../api.ts';
 import { checkUpdate, setState, toast, useStore } from '../store.ts';
 import { Spinner, cx } from './ui.tsx';
 
-type Phase = 'idle' | 'pull' | 'install' | 'build' | 'restart' | 'done' | 'error';
-const STEPS: { id: Phase; label: string }[] = [
+type Phase = 'idle' | 'pull' | 'install' | 'build' | 'download' | 'extract' | 'restart' | 'done' | 'error';
+const GIT_STEPS: { id: Phase; label: string }[] = [
   { id: 'pull', label: 'Tải code mới (git pull)' },
   { id: 'install', label: 'Cài thư viện (npm install, khi có thay đổi)' },
   { id: 'build', label: 'Build giao diện' },
   { id: 'restart', label: 'Khởi động lại' },
 ];
+const PACKAGED_STEPS: { id: Phase; label: string }[] = [
+  { id: 'download', label: 'Tải bản cập nhật' },
+  { id: 'extract', label: 'Giải nén và kiểm tra' },
+  { id: 'restart', label: 'Khởi động lại' },
+];
 
+const NEW: [string, string] = ['Mới', 'bg-accent/12 text-accent'];
+const FIX: [string, string] = ['Sửa lỗi', 'bg-err/10 text-err'];
+const BETTER: [string, string] = ['Cải tiến', 'bg-ok/12 text-ok'];
 const KIND: Record<string, [string, string]> = {
-  feat: ['Mới', 'bg-accent/12 text-accent'],
-  fix: ['Sửa lỗi', 'bg-err/10 text-err'],
-  perf: ['Nhanh hơn', 'bg-ok/12 text-ok'],
+  // commit prefixes (git installs) and CHANGELOG labels (release notes)
+  feat: NEW,
+  'mới': NEW,
+  fix: FIX,
+  'sửa lỗi': FIX,
+  perf: BETTER,
+  refactor: BETTER,
+  style: BETTER,
+  'cải tiến': BETTER,
   docs: ['Tài liệu', 'bg-hover text-muted'],
-  refactor: ['Cải tiến', 'bg-hover text-muted'],
-  style: ['Giao diện', 'bg-hover text-muted'],
 };
 
-/** "feat(ui): add X" → ["Mới", "Add X"] */
+/** "feat(ui): add X" / "Mới: Thêm X" → ["Mới", "Add X"] */
 function readable(subject: string): { kind?: [string, string]; text: string } {
-  const m = /^(\w+)(?:\([^)]*\))?!?:\s*(.+)$/.exec(subject);
-  if (!m) return { text: subject };
+  const m = /^([^:()]{2,12})(?:\([^)]*\))?!?:\s*(.+)$/.exec(subject.replace(/\*\*/g, ''));
+  const kind = m && KIND[m[1].trim().toLowerCase()];
+  if (!m || !kind) return { text: subject };
   const text = m[2].charAt(0).toUpperCase() + m[2].slice(1);
-  return { kind: KIND[m[1].toLowerCase()], text };
+  return { kind, text };
 }
 
 const fmtDate = (iso?: string) => (iso ? new Date(iso).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '');
@@ -107,6 +120,7 @@ export function UpdateDialog() {
     }
   };
 
+  const STEPS = u?.packaged ? PACKAGED_STEPS : GIT_STEPS;
   const at = STEPS.findIndex((s) => s.id === phase);
   const finished = phase === 'restart' && !u?.canRestart;
 
@@ -167,7 +181,9 @@ export function UpdateDialog() {
                   {u.busy && <div className="rounded-lg bg-warn/10 px-3 py-2">Đang có agent chạy. Cập nhật sẽ dừng nó, nên đợi chạy xong đã.</div>}
                   <div className="text-[12px] text-faint">
                     {u.packaged
-                      ? 'Bấm Tải bản mới để mở trang tải trên GitHub, cài đè lên bản đang dùng (dữ liệu và cài đặt giữ nguyên).'
+                      ? u.payloadUrl
+                        ? 'App tải bản mới về rồi khởi động lại, không cần cài lại. Dữ liệu và cài đặt giữ nguyên.'
+                        : 'Bản này cần cài lại: bấm Tải bộ cài để mở trang tải, cài đè lên bản đang dùng (dữ liệu giữ nguyên).'
                       : 'App sẽ tự chạy git pull → npm install (nếu cần) → build → khởi động lại. Terminal đang mở sẽ bị đóng. Build lỗi thì app vẫn giữ bản cũ.'}
                   </div>
                 </>
@@ -215,16 +231,16 @@ export function UpdateDialog() {
           <button type="button" onClick={check} disabled={running || checking} className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-[13px] hover:bg-hover disabled:opacity-40">
             <RefreshCw size={13} className={cx(checking && 'animate-spin')} /> Kiểm tra lại
           </button>
-          {u?.packaged && !!u.behind && (
+          {u?.packaged && !!u.behind && !u.payloadUrl && (
             <button
               type="button"
               onClick={() => void api('POST', '/update/download').catch((e) => toast((e as Error).message))}
               className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-white hover:opacity-90"
             >
-              <ArrowUpCircle size={14} /> Tải bản mới
+              <ArrowUpCircle size={14} /> Tải bộ cài
             </button>
           )}
-          {!u?.packaged && (phase === 'idle' || phase === 'error') && !!u?.behind && (
+          {(!u?.packaged || !!u.payloadUrl) && (phase === 'idle' || phase === 'error') && !!u?.behind && (
             <button type="button" onClick={apply} className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-white hover:opacity-90">
               <ArrowUpCircle size={14} /> {phase === 'error' ? 'Thử lại' : 'Cập nhật & khởi động lại'}
             </button>

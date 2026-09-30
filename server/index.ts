@@ -44,10 +44,10 @@ const buildId = () => {
   }
 };
 
-/** Only when started through bin/agentdesk.js can we start ourselves again the same way. */
+/** Only when started through a bin/agentdesk.js (repo, packaged app or updated copy) can we start ourselves again. */
 const canRelaunch = () => {
   try {
-    return fs.realpathSync(process.argv[1] || '') === fs.realpathSync(path.join(APP_ROOT, 'bin', 'agentdesk.js'));
+    return path.basename(fs.realpathSync(process.argv[1] || '')) === 'agentdesk.js';
   } catch {
     return false;
   }
@@ -142,7 +142,16 @@ export function start(opts: StartOptions): Promise<http.Server> {
 
   /** Start a fresh AgentDesk on the same port + token (open windows reconnect by themselves), then quit. */
   const relaunch = () => {
-    const launcher = path.join(APP_ROOT, 'bin', 'agentdesk.js');
+    // AgentDesk.app owns its server: exit with 75 and let the window start the (new) code again
+    if (process.env.AGENTDESK_HOST === 'mac-app') {
+      for (const c of clients) c.terminate();
+      server.close();
+      v6server?.close();
+      setTimeout(() => process.exit(75), 200);
+      return;
+    }
+    // the entry the user started (bundled launcher → picks the newest downloaded copy)
+    const launcher = fs.realpathSync(process.argv[1]);
     const argv = process.argv.slice(2);
     const keep = argv.filter((a, i) => a !== '--no-open' && a !== '--port' && argv[i - 1] !== '--port');
     const child = spawn(process.execPath, [launcher, ...keep, '--no-open', '--port', String(listenPort)], {

@@ -4,7 +4,7 @@ import { spawnSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const [major, minor] = process.versions.node.split('.').map(Number);
 if (major < 23 || (major === 23 && minor < 6)) {
@@ -13,6 +13,35 @@ if (major < 23 || (major === 23 && minor < 6)) {
 }
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+// Packaged app: the in-app updater drops newer app code in ~/.agentdesk/app/<version>/ (the
+// installed .app / .exe stays untouched). Run that copy when it is newer than the bundled one.
+if (process.env.AGENTDESK_PACKAGED === '1' && !process.env.AGENTDESK_PAYLOAD) {
+  const home = process.env.AGENTDESK_HOME || path.join(os.homedir(), '.agentdesk');
+  const version = (dir) => {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).version || '0.0.0';
+    } catch {
+      return '0.0.0';
+    }
+  };
+  const newer = (a, b) => {
+    const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+    for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+    return false;
+  };
+  let payload;
+  try {
+    payload = path.join(home, 'app', fs.readFileSync(path.join(home, 'app', 'current'), 'utf8').trim());
+  } catch {
+    /* never updated */
+  }
+  if (payload && fs.existsSync(path.join(payload, 'bin', 'agentdesk.js')) && newer(version(payload), version(ROOT))) {
+    process.env.AGENTDESK_PAYLOAD = payload;
+    await import(pathToFileURL(path.join(payload, 'bin', 'agentdesk.js')).href);
+    await new Promise(() => {}); // that copy runs the app; don't start a second one below
+  }
+}
 
 // Opened from Finder / the Dock (packaged AgentDesk.app): macOS hands GUI apps a bare PATH, so
 // claude / codex / git installed with Homebrew, nvm, npm -g… would not be found. Borrow the PATH
@@ -154,7 +183,8 @@ const wanted = Number(opt('--port') || 4545);
 const relaunched = process.env.AGENTDESK_RELAUNCH === '1';
 const common = {
   token: process.env.AGENTDESK_TOKEN,
-  exitWhenIdle: relaunched || (!native && !noOpen && !flag('--keep')),
+  // AgentDesk.app normally stops us on quit; if the window dies without that, quit once nobody is connected
+  exitWhenIdle: relaunched || process.env.AGENTDESK_HOST === 'mac-app' || (!native && !noOpen && !flag('--keep')),
   onReady,
 };
 for (let attempt = 0; ; attempt++) {

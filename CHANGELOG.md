@@ -1,0 +1,24 @@
+# Nhật ký thay đổi
+
+Mỗi phiên bản liệt kê những gì thay đổi. Dòng bắt đầu bằng **Mới:**, **Cải tiến:** hoặc **Sửa lỗi:** để app hiện nhãn tương ứng trong hộp thoại Cập nhật. Khi ra bản mới, thêm mục `## [x.y.z]` ở đầu danh sách, GitHub Actions lấy đúng mục đó làm nội dung Release.
+
+## [0.3.0] - 2026-09-30
+
+- Mới: Cập nhật ngay trong app cài đặt (.dmg / .exe): bấm Cập nhật là tải bản mới và khởi động lại, không cần tải lại bộ cài, không phải bấm "Vẫn mở" lại trên macOS
+- Mới: Hộp thoại Cập nhật ghi rõ từng thay đổi của bản mới (lấy từ nhật ký này)
+- Sửa lỗi: Kéo đổi độ rộng sidebar trái, sidebar phải và panel Terminal giờ kéo mượt, kéo qua editor hay Preview không bị mất; bấm đúp vào thanh kéo để về mặc định
+- Sửa lỗi: Nếu cửa sổ app bị tắt bất thường, server chạy ngầm tự tắt theo thay vì còn sót lại
+
+## [0.2.0] - 2026-09-30
+
+- Mới: Bản cài cho macOS (.dmg) và Windows (bộ cài .exe / .zip), đã có sẵn Node, trang tải tại thinhtp204.github.io/claude-codex
+- Mới: Báo lỗi code (Problems) từ TypeScript, ESLint, Biome, Ruff; file lỗi tô đỏ, editor gạch chân, một nút gửi cho agent sửa
+- Mới: Chuột phải trong Explorer để tạo, đổi tên, xoá (vào Thùng rác) file và thư mục
+- Mới: Gõ / trong ô chat để chọn lệnh và skill của Claude, Codex, Antigravity
+- Mới: Mở thư mục cha là tự tìm các repo con (Explorer, Source Control, skill của từng repo)
+- Mới: Đính kèm file, dán ảnh chụp màn hình vào chat; xem ảnh và PDF trong editor
+- Mới: Pipeline có mục Cần sửa, VERDICT: ASK để hỏi người dùng, chấm lại chỉ kiểm tra ý cũ
+- Mới: Model Claude mới (Fable 5.1, Opus 5.5, Sonnet 5.5), workspace nhiều repo, logo mới
+- Cải tiến: Thanh tiến trình pipeline gọn hơn, sơ đồ Flow có nút Sắp xếp, ít tốn CPU khi để app mở lâu
+- Sửa lỗi: Terminal trên Windows có dấu nhắc PowerShell, ↑↓ gọi lại lệnh cũ, không còn in ra "[A"
+- Sửa lỗi: Xoá session gốc của Claude/Codex không còn hiện lại

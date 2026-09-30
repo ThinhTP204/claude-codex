@@ -31,54 +31,67 @@ function useWidth(key: string, initial: number) {
   return [w, set] as const;
 }
 
-function Resizer({ onDrag, side }: { onDrag: (dx: number) => void; side: 'left' | 'right' }) {
-  const last = useRef(0);
+/**
+ * Drag handle between panels. Sizes are computed from where the drag started (not step by step),
+ * and the pointer is captured so dragging across the editor / Preview iframe doesn't lose it.
+ * Double-click restores the default size.
+ */
+function DragHandle({
+  axis,
+  value,
+  onChange,
+  min,
+  max,
+  sign,
+  reset,
+}: {
+  axis: 'x' | 'y';
+  value: number;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+  /** +1: dragging right/down grows the panel, -1: shrinks it */
+  sign: 1 | -1;
+  reset: number;
+}) {
+  const start = useRef<{ pos: number; size: number } | null>(null);
+  const x = axis === 'x';
   return (
     <div
-      className={cx('group relative z-10 w-0 shrink-0 cursor-col-resize', side === 'left' ? '-mr-px' : '-ml-px')}
-      onMouseDown={(e) => {
-        last.current = e.clientX;
-        const move = (ev: MouseEvent) => {
-          onDrag(ev.clientX - last.current);
-          last.current = ev.clientX;
-        };
-        const up = () => {
-          document.removeEventListener('mousemove', move);
-          document.removeEventListener('mouseup', up);
-          document.body.style.cursor = '';
-        };
-        document.body.style.cursor = 'col-resize';
-        document.addEventListener('mousemove', move);
-        document.addEventListener('mouseup', up);
+      role="separator"
+      aria-orientation={x ? 'vertical' : 'horizontal'}
+      title="Kéo để đổi kích thước · bấm đúp để về mặc định"
+      className={cx('group relative z-20 shrink-0 touch-none', x ? '-mx-[3px] w-[7px] cursor-col-resize' : '-my-[3px] h-[7px] cursor-row-resize')}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        try {
+          (e.target as HTMLElement).setPointerCapture(e.pointerId);
+        } catch {
+          /* no capture: dragging still works while the pointer stays over the handle */
+        }
+        start.current = { pos: x ? e.clientX : e.clientY, size: value };
+        document.body.style.cursor = x ? 'col-resize' : 'row-resize';
+        document.body.style.userSelect = 'none';
       }}
-    >
-      <div className="absolute inset-y-0 -left-1 w-2 group-hover:bg-accent/30" />
-    </div>
-  );
-}
-
-function RowResizer({ onDrag }: { onDrag: (dy: number) => void }) {
-  const last = useRef(0);
-  return (
-    <div
-      className="group relative z-10 h-0 shrink-0 cursor-row-resize"
-      onMouseDown={(e) => {
-        last.current = e.clientY;
-        const move = (ev: MouseEvent) => {
-          onDrag(ev.clientY - last.current);
-          last.current = ev.clientY;
-        };
-        const up = () => {
-          document.removeEventListener('mousemove', move);
-          document.removeEventListener('mouseup', up);
-          document.body.style.cursor = '';
-        };
-        document.body.style.cursor = 'row-resize';
-        document.addEventListener('mousemove', move);
-        document.addEventListener('mouseup', up);
+      onPointerMove={(e) => {
+        const st = start.current;
+        if (!st) return;
+        const d = (x ? e.clientX : e.clientY) - st.pos;
+        onChange(Math.round(Math.max(min, Math.min(max, st.size + sign * d))));
       }}
+      onPointerUp={(e) => {
+        start.current = null;
+        try {
+          (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+        } catch {
+          /* was not captured */
+        }
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }}
+      onDoubleClick={() => onChange(reset)}
     >
-      <div className="absolute inset-x-0 -top-1 h-2 group-hover:bg-accent/30" />
+      <div className={cx('absolute transition-colors group-hover:bg-accent/50 group-active:bg-accent', x ? 'inset-y-0 left-[3px] w-px' : 'inset-x-0 top-[3px] h-px')} />
     </div>
   );
 }
@@ -198,7 +211,7 @@ export function App() {
           <div style={{ width: leftW }} className="shrink-0 border-r border-line">
             <Sidebar onCollapse={() => setLeftOpen(0)} />
           </div>
-          <Resizer side="left" onDrag={(dx) => setLeftW(Math.max(200, Math.min(460, leftW + dx)))} />
+          <DragHandle axis="x" value={leftW} onChange={setLeftW} min={200} max={560} sign={1} reset={272} />
         </>
       ) : null}
 
@@ -338,7 +351,7 @@ export function App() {
         </div>
         {termOpen && (
           <>
-            <RowResizer onDrag={(dy) => setTermH(Math.max(120, Math.min(window.innerHeight - 200, termH - dy)))} />
+            <DragHandle axis="y" value={termH} onChange={setTermH} min={120} max={Math.max(160, window.innerHeight - 200)} sign={-1} reset={280} />
             <div style={{ height: termH }} className="shrink-0 border-t border-line">
               <TerminalPanel />
             </div>
@@ -348,7 +361,7 @@ export function App() {
 
       {rightOpen ? (
         <>
-          <Resizer side="right" onDrag={(dx) => setRightW(Math.max(200, Math.min(520, rightW - dx)))} />
+          <DragHandle axis="x" value={rightW} onChange={setRightW} min={200} max={720} sign={-1} reset={280} />
           <div style={{ width: rightW }} className="shrink-0 border-l border-line">
             <RightPanel onCollapse={() => setRightOpen(0)} />
           </div>

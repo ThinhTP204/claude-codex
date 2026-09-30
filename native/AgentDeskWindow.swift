@@ -67,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
         var env = ProcessInfo.processInfo.environment
         env["AGENTDESK_PACKAGED"] = "1"
+        env["AGENTDESK_HOST"] = "mac-app"
         p.environment = env
         let out = Pipe()
         p.standardOutput = out
@@ -85,6 +86,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         p.terminationHandler = { [weak self] proc in
             DispatchQueue.main.async {
                 guard NSApp.isRunning else { return }
+                // 75 = the in-app updater installed new code: start it
+                if proc.terminationStatus == 75 { self?.startBundledServer(); return }
                 self?.showMessage("AgentDesk đã dừng (mã \(proc.terminationStatus)).", detail: log)
             }
         }

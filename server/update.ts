@@ -4,6 +4,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { isWin } from './platform.ts';
+import { DATA_DIR } from './store.ts';
 
 export const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -19,13 +20,16 @@ export interface UpdateCheck {
   packaged?: boolean;
   /** packaged: the release page to download from */
   downloadUrl?: string;
+  /** packaged: the app-code archive the in-place updater installs */
+  payloadUrl?: string;
+  latest?: string;
   behind: number;
   commits: { hash: string; subject: string; date: string }[];
   checkedAt: number;
 }
 
 export interface UpdateJob {
-  phase: 'idle' | 'pull' | 'install' | 'build' | 'restart' | 'done' | 'error';
+  phase: 'idle' | 'pull' | 'install' | 'build' | 'download' | 'extract' | 'restart' | 'done' | 'error';
   log: string;
   error?: string;
 }
@@ -107,9 +111,10 @@ async function checkRelease(base: { behind: number; commits: UpdateCheck['commit
   }
   const info = { ...base, supported: true, packaged: true, version };
   try {
-    const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15_000) });
+    // AGENTDESK_RELEASES_API: point at another "latest release" JSON (used to test the updater)
+    const r = await fetch(process.env.AGENTDESK_RELEASES_API || `https://api.github.com/repos/${REPO}/releases/latest`, { headers: { accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15_000) });
     if (!r.ok) return { ...info, reason: r.status === 404 ? undefined : `GitHub trả lỗi ${r.status}` };
-    const rel = (await r.json()) as { tag_name: string; name?: string; html_url: string; published_at?: string; body?: string };
+    const rel = (await r.json()) as { tag_name: string; name?: string; html_url: string; published_at?: string; body?: string; assets?: { name: string; browser_download_url: string }[] };
     const latest = rel.tag_name.replace(/^v/, '');
     if (!newer(latest, version)) return info;
     // release notes: one change per "- " line
@@ -123,6 +128,8 @@ async function checkRelease(base: { behind: number; commits: UpdateCheck['commit
       behind: Math.max(1, notes.length),
       commits: notes.length ? notes : [{ hash: rel.tag_name, subject: rel.name || `Phiên bản ${latest}`, date: '' }],
       downloadUrl: rel.html_url,
+      payloadUrl: rel.assets?.find((a) => /^AgentDesk-app(-[\d.]+)?\.tar\.gz$/.test(a.name))?.browser_download_url,
+      latest,
       subject: `Có bản ${latest}`,
     };
   } catch (e) {
@@ -131,6 +138,51 @@ async function checkRelease(base: { behind: number; commits: UpdateCheck['commit
 }
 
 let job: UpdateJob = { phase: 'idle', log: '' };
+
+/**
+ * Packaged app: download the app-code archive of the latest release into ~/.agentdesk/app/<version>/
+ * and point "current" at it. The installed .app / .exe is never modified (signature and Gatekeeper
+ * approval stay valid); bin/agentdesk.js picks the newer copy on the next start.
+ */
+async function applyPayload(relaunch: () => void): Promise<void> {
+  const info = await checkUpdate(true);
+  if (!info.payloadUrl || !info.latest) throw new Error('Bản mới chưa có gói cập nhật nhanh, hãy tải bộ cài đầy đủ.');
+  job = { phase: 'download', log: '' };
+  const log = (s: string) => (job.log = (job.log + s).slice(-20_000));
+  const fail = (msg: string) => {
+    job.phase = 'error';
+    job.error = msg;
+  };
+  void (async () => {
+    const base = path.join(DATA_DIR, 'app');
+    const dest = path.join(base, info.latest!);
+    const tmp = `${dest}.part`;
+    const archive = path.join(base, `AgentDesk-app-${info.latest}.tar.gz`);
+    fs.mkdirSync(base, { recursive: true });
+    log(`Tải ${info.payloadUrl}\n`);
+    const r = await fetch(info.payloadUrl!, { redirect: 'follow', signal: AbortSignal.timeout(120_000) }).catch((e) => e as Error);
+    if (r instanceof Error || !r.ok) return fail(`Không tải được bản cập nhật: ${r instanceof Error ? r.message : `HTTP ${r.status}`}`);
+    fs.writeFileSync(archive, Buffer.from(await r.arrayBuffer()));
+    log(`Đã tải ${(fs.statSync(archive).size / 1e6).toFixed(1)} MB\n`);
+    job.phase = 'extract';
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.mkdirSync(tmp, { recursive: true });
+    // tar ships with macOS, Linux and Windows 10+
+    const x = await sh('tar', ['-xzf', archive, '-C', tmp], log, 60_000);
+    fs.rmSync(archive, { force: true });
+    if (x.code !== 0 || !fs.existsSync(path.join(tmp, 'bin', 'agentdesk.js')) || !fs.existsSync(path.join(tmp, 'dist', 'index.html')))
+      return fail('Gói cập nhật bị lỗi, app vẫn giữ bản cũ.');
+    fs.rmSync(dest, { recursive: true, force: true });
+    fs.renameSync(tmp, dest);
+    fs.writeFileSync(path.join(base, 'current'), info.latest!);
+    // keep only the version just installed (the running one is still loaded in memory)
+    for (const d of fs.readdirSync(base)) if (d !== info.latest && d !== 'current') fs.rmSync(path.join(base, d), { recursive: true, force: true });
+    job.phase = 'restart';
+    log(`Đã cài bản ${info.latest}. Đang khởi động lại…\n`);
+    cached = undefined;
+    setTimeout(relaunch, 400);
+  })().catch((e) => fail(String((e as Error).message || e)));
+}
 export const updateStatus = () => job;
 
 /**
@@ -139,6 +191,7 @@ export const updateStatus = () => job;
  */
 export async function applyUpdate(relaunch: () => void): Promise<void> {
   if (job.phase !== 'idle' && job.phase !== 'error' && job.phase !== 'done') throw new Error('Đang cập nhật rồi.');
+  if (!fs.existsSync(path.join(APP_ROOT, '.git'))) return applyPayload(relaunch);
   job = { phase: 'pull', log: '' };
   const log = (s: string) => {
     job.log = (job.log + s).slice(-20_000);
