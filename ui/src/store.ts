@@ -79,6 +79,8 @@ export interface UpdateInfo {
   reason?: string;
   commit?: string;
   subject?: string;
+  version?: string;
+  date?: string;
   behind: number;
   commits: { hash: string; subject: string; date: string }[];
   canRestart: boolean;

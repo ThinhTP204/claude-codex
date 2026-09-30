@@ -12,6 +12,9 @@ export interface UpdateCheck {
   reason?: string;
   commit?: string;
   subject?: string;
+  /** package.json version and date of the running commit, for humans */
+  version?: string;
+  date?: string;
   behind: number;
   commits: { hash: string; subject: string; date: string }[];
   checkedAt: number;
@@ -56,12 +59,18 @@ export async function checkUpdate(force = false): Promise<UpdateCheck> {
   if (!force && cached && Date.now() - cached.checkedAt < 10 * 60_000) return cached;
   const base = { behind: 0, commits: [], checkedAt: Date.now() };
   if (!fs.existsSync(path.join(APP_ROOT, '.git'))) return (cached = { ...base, supported: false, reason: 'Bản này không cài bằng git clone nên không tự cập nhật được.' });
-  const head = await git(['log', '-1', '--format=%h%x09%s']);
-  const [commit, subject] = head.out.trim().split('\t');
+  const head = await git(['log', '-1', '--format=%h%x09%s%x09%cI']);
+  const [commit, subject, date] = head.out.trim().split('\t');
+  let version: string | undefined;
+  try {
+    version = JSON.parse(fs.readFileSync(path.join(APP_ROOT, 'package.json'), 'utf8')).version;
+  } catch {
+    /* no version */
+  }
   const up = await git(['rev-parse', '--abbrev-ref', '@{u}']);
-  if (up.code !== 0) return (cached = { ...base, supported: false, commit, subject, reason: 'Nhánh hiện tại không theo dõi nhánh nào trên GitHub.' });
+  if (up.code !== 0) return (cached = { ...base, supported: false, commit, subject, version, date, reason: 'Nhánh hiện tại không theo dõi nhánh nào trên GitHub.' });
   const fetched = await git(['fetch', '--quiet'], 30_000);
-  if (fetched.code !== 0) return { ...base, supported: true, commit, subject, reason: `Không kết nối được GitHub: ${fetched.out.trim().slice(0, 200)}` };
+  if (fetched.code !== 0) return { ...base, supported: true, commit, subject, version, date, reason: `Không kết nối được GitHub: ${fetched.out.trim().slice(0, 200)}` };
   const log = await git(['log', '--format=%h%x09%s%x09%cr', 'HEAD..@{u}']);
   const commits = log.out
     .trim()
@@ -71,7 +80,7 @@ export async function checkUpdate(force = false): Promise<UpdateCheck> {
       const [hash, subj, date] = l.split('\t');
       return { hash, subject: subj, date };
     });
-  return (cached = { ...base, supported: true, commit, subject, behind: commits.length, commits });
+  return (cached = { ...base, supported: true, commit, subject, version, date, behind: commits.length, commits });
 }
 
 let job: UpdateJob = { phase: 'idle', log: '' };

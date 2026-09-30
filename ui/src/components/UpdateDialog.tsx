@@ -12,6 +12,25 @@ const STEPS: { id: Phase; label: string }[] = [
   { id: 'restart', label: 'Khởi động lại' },
 ];
 
+const KIND: Record<string, [string, string]> = {
+  feat: ['Mới', 'bg-accent/12 text-accent'],
+  fix: ['Sửa lỗi', 'bg-err/10 text-err'],
+  perf: ['Nhanh hơn', 'bg-ok/12 text-ok'],
+  docs: ['Tài liệu', 'bg-hover text-muted'],
+  refactor: ['Cải tiến', 'bg-hover text-muted'],
+  style: ['Giao diện', 'bg-hover text-muted'],
+};
+
+/** "feat(ui): add X" → ["Mới", "Add X"] */
+function readable(subject: string): { kind?: [string, string]; text: string } {
+  const m = /^(\w+)(?:\([^)]*\))?!?:\s*(.+)$/.exec(subject);
+  if (!m) return { text: subject };
+  const text = m[2].charAt(0).toUpperCase() + m[2].slice(1);
+  return { kind: KIND[m[1].toLowerCase()], text };
+}
+
+const fmtDate = (iso?: string) => (iso ? new Date(iso).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '');
+
 /** Always-visible sidebar entry: version + "Cập nhật"; turns orange when GitHub has something newer. */
 export function UpdateBadge() {
   const u = useStore((s) => s.update);
@@ -31,7 +50,7 @@ export function UpdateBadge() {
       {behind ? (
         <span className="shrink-0 rounded-full bg-accent px-1.5 text-[10.5px] font-semibold leading-4 text-white">{behind}</span>
       ) : (
-        u?.commit && <code className="shrink-0 text-[11px] font-normal text-faint">{u.commit}</code>
+        u?.version && <span className="shrink-0 text-[11px] font-normal text-faint">v{u.version}</span>
       )}
     </button>
   );
@@ -105,8 +124,16 @@ export function UpdateDialog() {
         </div>
 
         <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4 text-[13px]">
-          <div className="text-muted">
-            Đang dùng: <code className="rounded bg-code px-1">{u?.commit || '…'}</code> {u?.subject}
+          <div className="flex items-baseline gap-2 text-muted">
+            <span>
+              Phiên bản hiện tại: <b className="font-semibold text-fg">{u?.version || '…'}</b>
+              {u?.date && <> · cập nhật {fmtDate(u.date)}</>}
+            </span>
+            {u?.commit && (
+              <code className="ml-auto text-[11px] text-faint" title={u.subject}>
+                #{u.commit}
+              </code>
+            )}
           </div>
 
           {phase === 'idle' && (
@@ -126,14 +153,16 @@ export function UpdateDialog() {
               ) : (
                 <>
                   <div className="font-medium">Có {u.behind} thay đổi mới:</div>
-                  <ul className="max-h-56 space-y-1 overflow-auto rounded-lg border border-line bg-bg/40 p-2">
-                    {u.commits.map((c) => (
-                      <li key={c.hash} className="flex gap-2">
-                        <code className="shrink-0 text-[11.5px] text-faint">{c.hash}</code>
-                        <span className="min-w-0 flex-1">{c.subject}</span>
-                        <span className="shrink-0 text-[11.5px] text-faint">{c.date}</span>
-                      </li>
-                    ))}
+                  <ul className="max-h-60 space-y-1.5 overflow-auto rounded-lg border border-line bg-bg/40 p-2.5">
+                    {u.commits.map((c) => {
+                      const r = readable(c.subject);
+                      return (
+                        <li key={c.hash} className="flex items-start gap-2" title={`#${c.hash} · ${c.date}`}>
+                          <span className={cx('mt-px w-[68px] shrink-0 rounded px-1.5 text-center text-[11px] font-medium', r.kind?.[1] ?? 'bg-hover text-muted')}>{r.kind?.[0] ?? 'Thay đổi'}</span>
+                          <span className="min-w-0 flex-1 leading-snug">{r.text}</span>
+                        </li>
+                      );
+                    })}
                   </ul>
                   {u.busy && <div className="rounded-lg bg-warn/10 px-3 py-2">Đang có agent chạy. Cập nhật sẽ dừng nó, nên đợi chạy xong đã.</div>}
                   <div className="text-[12px] text-faint">
