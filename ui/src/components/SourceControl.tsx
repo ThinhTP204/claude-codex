@@ -30,13 +30,22 @@ const COLOR: Record<string, string> = {
 };
 const LABEL: Record<string, string> = { M: 'Đã sửa', A: 'Thêm mới', U: 'File mới', D: 'Đã xoá', R: 'Đổi tên' };
 
+/** Open a file of the repo shown in Source Control: through the project tree when the repo lives inside it. */
+function openRepoFile(rel: string, diff: boolean) {
+  const s = getState();
+  const repo = scmRootOf(s);
+  const project = s.project;
+  if (repo && project && repo !== project && repo.startsWith(project + '/')) return openFile(`${repo.slice(project.length + 1)}/${rel}`, { diff });
+  openFile(rel, { diff, root: repo });
+}
+
 function FileRow({ f, code, staged }: { f: GitFile; code: string; staged: boolean }) {
   const name = f.path.split('/').pop()!;
   const dir = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '';
   const busy = !!useStore((s) => s.gitBusy);
   return (
     <div
-      onClick={() => code !== 'D' && openFile(f.path, { diff: !f.untracked, root: scmRootOf(getState()) })}
+      onClick={() => code !== 'D' && openRepoFile(f.path, !f.untracked)}
       title={`${f.path} · ${f.conflict ? 'Xung đột' : LABEL[code] || code}${code !== 'D' ? ' · bấm để xem diff' : ''}`}
       className="group flex h-[24px] cursor-pointer items-center gap-1.5 pl-5 pr-2 text-[13px] hover:bg-hover"
     >
@@ -259,31 +268,36 @@ function History() {
 function RepoPicker() {
   const project = useStore((s) => s.project);
   const folders = useStore((s) => s.folders);
+  const repos = useStore((s) => s.repos);
   const current = useStore(scmRootOf);
   const rootGit = useStore((s) => s.rootGit);
-  const primaryCount = useStore((s) => Object.keys(s.git.files).length);
-  const primaryBranch = useStore((s) => s.git.branch);
-  if (!project || !folders.length) return null;
+  if (!project) return null;
+  const name = (p: string) => p.split(/[\\/]/).pop();
+  // repos found inside the project, then extra workspace folders
+  const list = [
+    ...repos.map((r) => ({ path: r.path, label: r.rel || name(r.path), hint: r.rel ? undefined : 'project', branch: r.branch, n: r.changes })),
+    ...folders.map((f) => ({ path: f, label: name(f), hint: 'workspace', branch: rootGit[f]?.branch, n: Object.keys(rootGit[f]?.files || {}).length })),
+  ];
+  if (list.length < 2) return null;
   return (
     <div className="mb-1.5 border-b border-line px-2 pb-1.5">
-      <div className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Repositories</div>
-      {[project, ...folders].map((root) => {
-        const n = root === project ? primaryCount : Object.keys(rootGit[root]?.files || {}).length;
-        const branch = root === project ? primaryBranch : rootGit[root]?.branch;
-        return (
+      <div className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Repositories · {list.length}</div>
+      <div className="max-h-48 overflow-auto">
+        {list.map((r) => (
           <button
-            key={root}
+            key={r.path}
             type="button"
-            title={root}
-            onClick={() => setScmRoot(root)}
-            className={cx('flex h-6 w-full items-center gap-1.5 rounded px-1.5 text-left text-[13px] hover:bg-hover', root === current && 'bg-hover text-fg')}
+            title={r.path}
+            onClick={() => setScmRoot(r.path)}
+            className={cx('flex h-6 w-full items-center gap-1.5 rounded px-1.5 text-left text-[13px] hover:bg-hover', r.path === current && 'bg-hover text-fg')}
           >
-            <span className="min-w-0 flex-1 truncate">{root.split(/[\\/]/).pop()}</span>
-            {branch && <span className="shrink-0 truncate text-[11.5px] text-faint">{branch}</span>}
-            {n > 0 && <span className="shrink-0 rounded-full bg-accent/15 px-1.5 text-[10.5px] font-semibold text-accent">{n}</span>}
+            <GitBranch size={12} className="shrink-0 text-faint" />
+            <span className="min-w-0 flex-1 truncate">{r.label}</span>
+            {r.branch && <span className="max-w-[40%] shrink-0 truncate text-[11.5px] text-faint">{r.branch}</span>}
+            {r.n > 0 && <span className="shrink-0 rounded-full bg-accent/15 px-1.5 text-[10.5px] font-semibold text-accent">{r.n}</span>}
           </button>
-        );
-      })}
+        ))}
+      </div>
     </div>
   );
 }
@@ -546,5 +560,6 @@ function RepoPanel() {
 }
 
 /** Count shown on the Source Control tab */
+// project status already includes nested repos; add the extra workspace folders
 export const useChangeCount = () =>
   useStore((s) => Object.keys(s.git.files).length + Object.values(s.rootGit).reduce((n, g) => n + Object.keys(g.files).length, 0));

@@ -11,6 +11,7 @@ export type Tab =
   | { id: string; kind: 'file'; path: string; root?: string; diff?: boolean; line?: number; nonce?: number };
 
 type GitStatus = { branch?: string; files: Record<string, string> };
+export type RepoInfo = { path: string; rel: string; branch?: string; changes: number };
 
 export interface State {
   project?: string;
@@ -33,6 +34,8 @@ export interface State {
   folders: string[];
   /** git status of each extra folder */
   rootGit: Record<string, GitStatus>;
+  /** git repos inside the project: itself (rel "") and/or nested ones, like VS Code finds them */
+  repos: RepoInfo[];
   /** repo shown in Source Control (undefined = the project) */
   scmRoot?: string;
   /** what the in-app folder browser does with the chosen folder */
@@ -103,6 +106,7 @@ let state: State = {
   git: { files: {} },
   folders: [],
   rootGit: {},
+  repos: [],
   folderBrowserMode: 'open',
   fsVersion: 0,
   touched: {},
@@ -158,7 +162,12 @@ export async function refreshList(): Promise<void> {
 }
 
 /** Folder shown in Source Control. */
-export const scmRootOf = (s: State) => (s.scmRoot && s.folders.includes(s.scmRoot) ? s.scmRoot : s.project);
+export const scmRootOf = (s: State): string | undefined => {
+  if (s.scmRoot && (s.folders.includes(s.scmRoot) || s.repos.some((r) => r.path === s.scmRoot))) return s.scmRoot;
+  // a parent folder that is not a repo itself: manage its first repo, like VS Code
+  if (s.repos.length && !s.repos.some((r) => r.rel === '')) return s.repos[0].path;
+  return s.project;
+};
 
 /** Key for per-file maps (touched…) that works across workspace folders. */
 export const fileKey = (path: string, root?: string) => (root ? `${root}::${path}` : path);
@@ -166,6 +175,9 @@ export const fileKey = (path: string, root?: string) => (root ? `${root}::${path
 export async function refreshGit(): Promise<void> {
   const project = state.project;
   if (!project) return;
+  const repos = await api<RepoInfo[]>('GET', `/git/repos${qs({ project })}`).catch(() => state.repos);
+  if (project !== state.project) return;
+  setState({ repos });
   const scm = scmRootOf(state)!;
   const status = (root: string) => api<GitStatus>('GET', `/git/status${qs({ project: root })}`).catch(() => ({ files: {} }));
   let gitError: string | undefined;
@@ -292,6 +304,7 @@ export async function openProject(path: string): Promise<void> {
     touched: {},
     folders: [],
     rootGit: {},
+    repos: [],
     scmRoot: undefined,
     gitInfo: undefined,
   }));

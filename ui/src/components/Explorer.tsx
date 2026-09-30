@@ -50,6 +50,9 @@ function RootTree({ root, primary, multi, filter, collapseSignal }: { root: stri
   const fsVersion = useStore((s) => s.fsVersion);
   const git = useStore((s) => (primary ? s.git : s.rootGit[root] || NO_GIT));
   const touched = useStore((s) => s.touched);
+  const repos = useStore((s) => s.repos);
+  // folders inside the project that are git repos of their own
+  const repoAt = useMemo(() => (primary ? new Map(repos.filter((r) => r.rel).map((r) => [r.rel, r])) : new Map()), [repos, primary]);
   const [children, setChildren] = useState<Record<string, FsEntry[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['']));
   const [open, setOpen] = useState(true);
@@ -140,6 +143,20 @@ function RootTree({ root, primary, multi, filter, collapseSignal }: { root: stri
               <span className="min-w-0 flex-1 truncate" style={{ color }}>
                 {e.name}
               </span>
+              {isDir && repoAt.get(e.path)?.branch && (
+                <span
+                  className="inline-flex max-w-[45%] shrink-0 items-center gap-0.5 truncate text-[11px] text-faint hover:text-fg"
+                  title={`Repo git · nhánh ${repoAt.get(e.path)!.branch} · bấm để mở Source Control`}
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    setScmRoot(repoAt.get(e.path)!.path);
+                    setRightTab('scm');
+                  }}
+                >
+                  <GitBranch size={10} className="shrink-0" />
+                  <span className="truncate">{repoAt.get(e.path)!.branch}</span>
+                </span>
+              )}
               {!isDir && recent(e.path) && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title="Vừa bị thay đổi" />}
               {code && !isDir && (
                 <span className="w-3 shrink-0 text-center text-[11px] font-semibold" style={{ color }}>

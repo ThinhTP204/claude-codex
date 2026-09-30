@@ -2,6 +2,7 @@ import type { Conversation, PNode, Pipeline, PipelineRun, RunConfig, Turn } from
 import { executeTurn, finalText, isRunning, publish, saveConv, stopConv } from './conversations.ts';
 import { getRoles } from './roles.ts';
 import { uid } from './store.ts';
+import { reviewSections } from '../shared/verdict.ts';
 
 // Appended at run time, so it also applies to pipelines saved before these rules existed.
 const VERDICT_INSTRUCTION =
@@ -10,8 +11,37 @@ const VERDICT_INSTRUCTION =
   '- Góp ý nhỏ, cải tiến thêm, cách viết khác, rủi ro thấp: vẫn `VERDICT: PASS`, ghi vào mục `Lưu ý:`.\n' +
   '- Nếu kết luận phụ thuộc vào một quyết định nghiệp vụ mà chỉ người dùng trả lời được (bước trước không thể tự chốt): `VERDICT: ASK`, ' +
   'và ngay trước đó viết mục `Câu hỏi:` (tối đa 3 câu, mỗi câu kèm phương án đề xuất).\n' +
-  '- Nếu FAIL: ngay trước dòng VERDICT, viết mục `Cần sửa:` liệt kê ngắn gọn (tối đa 5 ý) những gì bước trước phải làm lại.\n' +
+  '- Nếu FAIL: ngay trước dòng VERDICT, viết mục `Cần sửa:` liệt kê ngắn gọn (tối đa 5 ý) những gì bước trước phải làm lại. ' +
+  'Lỗi từ lệnh (build/test/lint): ghi kèm đúng lệnh đã chạy, file:dòng và vài dòng lỗi gốc, để bước sau tái hiện và sửa tận gốc.\n' +
   'Dòng CUỐI CÙNG phải là đúng một trong: `VERDICT: PASS`, `VERDICT: FAIL`, `VERDICT: ASK`.';
+
+/**
+ * A step running again because a checking step failed it (Test → Code): say so explicitly, with the
+ * failures up front. Otherwise the agent gets its original "implement X" prompt and patches loosely.
+ */
+export function retryFeedback(run: PipelineRun, node: PNode, cfg: RunConfig): string {
+  const from = run.prevNode && run.prevNode !== node.id ? nodeOf(run, run.prevNode) : undefined;
+  const fst = from && run.nodes[from.id];
+  if (!from?.data.verdict || fst?.verdict !== 'fail' || !fst.output) return '';
+  const sections = reviewSections(fst.output).filter((x) => x.title === 'Cần sửa' || x.title === 'Câu hỏi');
+  const body = sections.length
+    ? sections.map((x) => `${x.title}:\n${x.body}`).join('\n\n')
+    : fst.output.length > 8000
+      ? '…' + fst.output.slice(-8000)
+      : fst.output;
+  const canRun = cfg.permission === 'exec' || cfg.permission === 'full';
+  return (
+    `\n\n---\nLẦN CHẠY LẠI: bước "${from.data.label}" vừa chấm CHƯA ĐẠT. Nhiệm vụ lần này là sửa triệt để các vấn đề dưới đây, không làm lại từ đầu ` +
+    `(nhận xét đầy đủ của "${from.data.label}" nằm trong ngữ cảnh phía trên).\n\n<feedback from="${from.data.label}">\n${body}\n</feedback>\n\n` +
+    'Yêu cầu:\n' +
+    '- Xử lý từng ý tận gốc (tìm nguyên nhân, không vá bề mặt). Với code: không che lỗi — không tắt/xoá test, không bỏ qua lint/type (any, @ts-ignore, eslint-disable), không nuốt exception.\n' +
+    '- Sửa luôn những chỗ cùng loại vấn đề liên quan, không chỉ đúng dòng được nêu.\n' +
+    (canRun
+      ? '- Chạy lại đúng lệnh build/test đã lỗi để xác nhận đã hết lỗi trước khi kết thúc.\n'
+      : '- Bạn không chạy được lệnh: đọc kỹ log/nhận xét và code liên quan, suy luận cẩn thận trước khi sửa.\n') +
+    '- Cuối câu trả lời liệt kê: từng ý → nguyên nhân → đã xử lý thế nào (file:dòng nếu có).'
+  );
+}
 
 export function parseVerdict(text: string): 'pass' | 'fail' | 'ask' | undefined {
   const all = [...text.matchAll(/VERDICT\s*[:：]\s*\**\s*(PASS|FAIL|ASK)/gi)];
@@ -76,6 +106,7 @@ async function execNode(c: Conversation, run: PipelineRun, node: PNode): Promise
 
   const { cfg, template, roleName, roleIcon } = nodeConfig(node);
   let prompt = render(run, template);
+  prompt += retryFeedback(run, node, cfg);
   if (node.data.verdict) prompt += VERDICT_INSTRUCTION;
 
   const { turn, result } = await executeTurn(c, { prompt, config: cfg, roleName, roleIcon, nodeId: node.id, nodeLabel: node.data.label });

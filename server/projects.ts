@@ -174,15 +174,70 @@ async function gitPrefix(root: string): Promise<string | null> {
   return prefix;
 }
 
+// ---- repos nested inside the project (a parent folder holding several repos, like VS Code) ----
+const nestedCache = new Map<string, { at: number; repos: string[] }>();
+
+function isWorktree(gitFile: string): boolean {
+  try {
+    return /[\\/]worktrees[\\/]/.test(fs.readFileSync(gitFile, 'utf8'));
+  } catch {
+    return false;
+  }
+}
+
+/** Project-relative paths of git repos inside `root` (up to 3 levels deep, not inside each other). */
+export function nestedRepos(root: string): string[] {
+  const hit = nestedCache.get(root);
+  if (hit && Date.now() - hit.at < 30_000) return hit.repos;
+  const repos: string[] = [];
+  const walk = (rel: string, depth: number) => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    const git = entries.find((e) => e.name === '.git');
+    if (rel && git) {
+      // a linked worktree (.git is a file "gitdir: …/.git/worktrees/x") is a checkout of another repo, not a repo of its own
+      if (!(git.isFile() && isWorktree(path.join(root, rel, '.git')))) repos.push(rel);
+      return; // a repo's own sub-repos are its business (submodules)
+    }
+    if (depth >= 3) return;
+    for (const e of entries) {
+      // hidden folders (.kilo, .claude, .cursor worktrees…) are tool state, like VS Code we don't scan them
+      if (!e.isDirectory() || e.name.startsWith('.') || HEAVY_DIRS.includes(e.name)) continue;
+      walk(rel ? `${rel}/${e.name}` : e.name, depth + 1);
+    }
+  };
+  walk('', 0);
+  nestedCache.set(root, { at: Date.now(), repos });
+  return repos;
+}
+
+/** The repo that owns `rel`: the deepest nested repo containing it, else the project itself. */
+export function repoOf(root: string, rel: string): { dir: string; prefix: string } {
+  const r = nestedRepos(root)
+    .filter((x) => rel === x || rel.startsWith(x + '/'))
+    .sort((a, b) => b.length - a.length)[0];
+  return r ? { dir: path.join(root, r), prefix: r + '/' } : { dir: root, prefix: '' };
+}
+
 async function gitIgnored(root: string, rels: string[]): Promise<Set<string>> {
-  if (!rels.length || (await gitPrefix(root)) === null) return new Set();
+  if (!rels.length) return new Set();
+  // entries of one directory all belong to the same repo
+  const dirRel = rels[0].includes('/') ? rels[0].slice(0, rels[0].lastIndexOf('/')) : '';
+  const { dir, prefix } = repoOf(root, dirRel);
+  if ((await gitPrefix(dir)) === null) return new Set();
+  const inRepo = rels.filter((r) => r.startsWith(prefix)).map((r) => r.slice(prefix.length));
+  if (!inRepo.length) return new Set();
   return new Promise((resolve) => {
-    const p = spawn('git', ['check-ignore', '--stdin', '-z'], { cwd: root });
+    const p = spawn('git', ['check-ignore', '--stdin', '-z'], { cwd: dir });
     let out = '';
     p.stdout.on('data', (d) => (out += d));
     p.on('error', () => resolve(new Set()));
-    p.on('close', () => resolve(new Set(out.split('\0').filter(Boolean))));
-    p.stdin.end(rels.join('\0') + '\0');
+    p.on('close', () => resolve(new Set(out.split('\0').filter(Boolean).map((x) => prefix + x))));
+    p.stdin.end(inRepo.join('\0') + '\0');
   });
 }
 
@@ -191,7 +246,7 @@ export async function listDir(root: string, rel: string): Promise<FsEntry[]> {
   const entries = fs.readdirSync(dir, { withFileTypes: true }).filter((e) => !ALWAYS_HIDDEN.has(e.name));
   const rels = entries.map((e) => (rel ? `${rel}/${e.name}` : e.name));
   const ignored = await gitIgnored(root, rels);
-  const git = (await gitPrefix(root)) !== null;
+  const git = (await gitPrefix(repoOf(root, rel).dir)) !== null;
   // Like VS Code: ignored entries stay visible (dimmed) instead of disappearing.
   return entries
     .map((e, i) => {
@@ -217,21 +272,28 @@ let fileListCache: { root: string; at: number; files: string[] } | undefined;
 async function projectFiles(root: string): Promise<string[]> {
   if (fileListCache?.root === root && Date.now() - fileListCache.at < 10_000) return fileListCache.files;
   let files: string[] = [];
+  const nested = nestedRepos(root);
+  const lsFiles = async (dir: string, prefix: string) => {
+    const r = await run('git', ['-C', dir, 'ls-files', '-co', '--exclude-standard', '-z'], 15_000);
+    // an untracked nested repo shows up as "sub/": its own listing covers it
+    return r.stdout.split('\0').filter((f) => f && !f.endsWith('/')).map((f) => prefix + f);
+  };
   if ((await gitPrefix(root)) !== null) {
-    const r = await run('git', ['-C', root, 'ls-files', '-co', '--exclude-standard', '-z'], 15_000);
-    files = r.stdout.split('\0').filter(Boolean);
+    files = await lsFiles(root, '');
   } else {
     const walk = (dir: string) => {
       if (files.length > 30_000) return;
       for (const e of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
-        if (ALWAYS_HIDDEN.has(e.name) || HEAVY_DIRS.includes(e.name)) continue;
+        if (ALWAYS_HIDDEN.has(e.name) || HEAVY_DIRS.includes(e.name) || e.name.startsWith('.pyenv')) continue;
         const rel = dir ? `${dir}/${e.name}` : e.name;
+        if (nested.includes(rel)) continue; // listed through git below (respects .gitignore)
         if (e.isDirectory()) walk(rel);
         else files.push(rel);
       }
     };
     walk('');
   }
+  for (const r of nested) files.push(...(await lsFiles(path.join(root, r), r + '/')));
   fileListCache = { root, at: Date.now(), files };
   return files;
 }
@@ -290,6 +352,28 @@ export function writeFile(root: string, rel: string, content: string): void {
 
 /** git status → { "src/a.ts": "M", "new.ts": "U", ... } */
 export async function gitStatus(root: string): Promise<{ branch?: string; files: Record<string, string> }> {
+  const own = await ownStatus(root);
+  // repos inside the project: their changes show in the same tree, under their folder
+  for (const r of nestedRepos(root)) {
+    const sub = await ownStatus(path.join(root, r));
+    for (const [f, code] of Object.entries(sub.files)) own.files[`${r}/${f}`] = code;
+  }
+  return own;
+}
+
+/** Every repo in the project (itself if it is one, plus nested ones) with branch and change count. */
+export async function projectRepos(root: string): Promise<{ path: string; rel: string; branch?: string; changes: number }[]> {
+  const list = [...((await gitPrefix(root)) !== null ? [''] : []), ...nestedRepos(root)];
+  return Promise.all(
+    list.map(async (rel) => {
+      const dir = rel ? path.join(root, rel) : root;
+      const st = await ownStatus(dir);
+      return { path: dir, rel, branch: st.branch, changes: Object.keys(st.files).filter((f) => !f.endsWith('/')).length };
+    }),
+  );
+}
+
+async function ownStatus(root: string): Promise<{ branch?: string; files: Record<string, string> }> {
   const prefix = await gitPrefix(root);
   if (prefix === null) return { files: {} };
   // paths come back relative to the repo root; `-- .` limits them to this project folder
@@ -314,14 +398,16 @@ export async function gitStatus(root: string): Promise<{ branch?: string; files:
       code = 'R';
       i++; // rename: next entry is the original path
     }
-    if (file.startsWith(prefix)) files[file.slice(prefix.length)] = code;
+    // "sub/" = an untracked nested repo; its files are reported by that repo
+    if (file.startsWith(prefix) && !file.endsWith('/')) files[file.slice(prefix.length)] = code;
   }
   return { branch, files };
 }
 
 export async function gitHead(root: string, rel: string): Promise<string | null> {
-  if ((await gitPrefix(root)) === null) return null;
-  const r = await run('git', ['-C', root, 'show', `HEAD:./${rel}`], 10000);
+  const { dir, prefix } = repoOf(root, rel);
+  if ((await gitPrefix(dir)) === null) return null;
+  const r = await run('git', ['-C', dir, 'show', `HEAD:./${rel.slice(prefix.length)}`], 10000);
   return r.code === 0 ? r.stdout : null;
 }
 

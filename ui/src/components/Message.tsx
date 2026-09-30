@@ -205,6 +205,16 @@ function VerdictBadge({ t, verdict }: { t: Turn; verdict: 'pass' | 'fail' | 'ask
   const label = t.nodeLabel || node?.data.label || 'Bước này';
   const names = (next || []).map((n) => n!.data.label).join(', ');
   const pass = verdict === 'pass';
+  // with "Dừng chờ duyệt" on, nothing moves until the user picks a branch
+  const waiting = run?.status === 'awaiting' && run.current === t.nodeId;
+  const gated = !!node?.data.approval;
+  const branch = (h: string) =>
+    run?.pipeline.edges
+      .filter((e) => e.source === t.nodeId && e.sourceHandle === h)
+      .map((e) => run.pipeline.nodes.find((n) => n.id === e.target))
+      .map((n) => (!n ? '' : n.type === 'end' ? 'kết thúc' : n.data.label))
+      .filter(Boolean)
+      .join(', ') || 'kết thúc';
   return (
     <div className={cx('mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-[13px]', pass ? 'border-ok/40 bg-ok/5' : 'border-err/40 bg-err/5')}>
       {pass ? <Check size={15} className="mt-0.5 shrink-0 text-ok" /> : <X size={15} className="mt-0.5 shrink-0 text-err" />}
@@ -213,7 +223,13 @@ function VerdictBadge({ t, verdict }: { t: Turn; verdict: 'pass' | 'fail' | 'ask
           {label}: {pass ? 'ĐẠT' : 'CHƯA ĐẠT'}
         </span>
         <span className="text-muted">
-          {pass
+          {waiting
+            ? ` → đang chờ bạn duyệt ở thẻ bên dưới: “Chưa đạt” gửi góp ý lại cho ${branch('fail')}, “Đạt” đi tiếp (${branch('pass')}).`
+            : gated
+              ? pass
+                ? ' → lý do ở phần trên.'
+                : ' → lý do ở phần trên (mục Cần sửa).'
+              : pass
             ? names
               ? ` → chuyển sang ${names}.`
               : ' → pipeline kết thúc.'
@@ -241,7 +257,7 @@ export const TurnView = memo(function TurnView({ t, draft }: { t: Turn; draft?: 
   const empty = !t.blocks.length && !draft;
   const { blocks, verdict } = splitVerdict(t);
   return (
-    <div className="group">
+    <div className="group scroll-mt-4" id={`turn-${t.id}`}>
       <TurnHeader t={t} />
       <div className="space-y-1.5">
         {blocks.map((b) =>

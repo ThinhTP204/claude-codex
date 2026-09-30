@@ -4,6 +4,7 @@ import type { Conversation, NodeRunState, PipelineRun, RunConfig } from '../../.
 import { convAction, ensureConv, getState, hideRun, pickProject, safe, sendMessage, setComposer, setState, toast, useStore } from '../store.ts';
 import { api, qs } from '../api.ts';
 import { ConfigPicker } from './ConfigPicker.tsx';
+import { reviewSections } from '../../../shared/verdict.ts';
 import { AttachButton, AttachmentChip } from './Attachments.tsx';
 import { type Attachment, REF_MIME, isImage, uploadFile, withAttachments } from '../attachments.ts';
 import { ProjectChip } from './ProjectMenu.tsx';
@@ -248,6 +249,7 @@ export function ApprovalCard({ conv, run, compact }: { conv: Conversation; run: 
           {node.data.label} cần một quyết định mà agent không tự chốt được (mục <b>Câu hỏi</b> ở trên). Gõ câu trả lời vào ô ghi chú bên dưới rồi chọn: gửi lại cho bước trước làm theo, hoặc đi tiếp luôn.
         </div>
       )}
+      {awaiting && <ReviewSummary text={st.output || ''} turnId={st.turnId} />}
       {st.error && <div className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap rounded-lg bg-err/5 px-2.5 py-1.5 text-[12.5px] text-err">{st.error}</div>}
 
       {mode === 'edit' && (
@@ -310,6 +312,36 @@ export function ApprovalCard({ conv, run, compact }: { conv: Conversation; run: 
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+const SECTION_STYLE: Record<string, string> = {
+  'Cần sửa': 'border-err/30 bg-err/5',
+  'Câu hỏi': 'border-warn/40 bg-warn/5',
+  'Lưu ý': 'border-line bg-bg/40',
+  'Giả định': 'border-line bg-bg/40',
+};
+
+/** The parts of a step's answer the user needs to decide on, right inside the approval card. */
+function ReviewSummary({ text, turnId }: { text: string; turnId?: string }) {
+  const sections = reviewSections(text);
+  const jump = () => document.getElementById(`turn-${turnId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  return (
+    <div className="mt-2 space-y-1.5">
+      {sections.map((s) => (
+        <div key={s.title} className={cx('rounded-lg border px-3 py-2', SECTION_STYLE[s.title])}>
+          <div className="mb-0.5 text-[12px] font-semibold uppercase tracking-wide text-muted">{s.title}</div>
+          <div className="max-h-56 overflow-auto">
+            <Markdown text={s.body} className="text-[13.5px]" />
+          </div>
+        </div>
+      ))}
+      {turnId && (
+        <button type="button" onClick={jump} className="text-[12px] text-muted underline-offset-2 hover:text-fg hover:underline">
+          {sections.length ? 'Xem toàn bộ nhận xét ↑' : 'Xem kết quả của bước này ↑'}
+        </button>
+      )}
     </div>
   );
 }
