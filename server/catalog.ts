@@ -1,16 +1,44 @@
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import type { AgentHealth, Catalog, Health, ModelInfo } from '../shared/types.ts';
-import { HOME, readJson } from './store.ts';
+import { DATA_DIR, HOME, readJson, writeJson } from './store.ts';
 import { resolveCommand } from './platform.ts';
 
 const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
+/**
+ * Aliases (opus/sonnet/haiku) always mean "the newest one this CLI supports", so their label comes
+ * from what the CLI actually reported last time (see noteClaudeModel). Full ids pin a version;
+ * `minCli` marks models that need a newer Claude Code than may be installed.
+ */
 const CLAUDE_MODELS: ModelInfo[] = [
-  { id: 'opus', label: 'Opus 5', efforts: CLAUDE_EFFORTS, defaultEffort: 'high', description: 'Mạnh nhất, hợp plan/debug' },
-  { id: 'sonnet', label: 'Sonnet 5', efforts: CLAUDE_EFFORTS, defaultEffort: 'medium', description: 'Cân bằng, hợp code' },
-  { id: 'haiku', label: 'Haiku 4.5', efforts: CLAUDE_EFFORTS, defaultEffort: 'low', description: 'Nhanh, rẻ' },
+  { id: 'claude-fable-5-1', label: 'Fable 5.1', efforts: CLAUDE_EFFORTS, defaultEffort: 'high', minCli: '2.1.251', description: 'Mạnh nhất · cần usage credits' },
+  { id: 'claude-opus-5-5', label: 'Opus 5.5', efforts: CLAUDE_EFFORTS, defaultEffort: 'high', minCli: '2.1.280', description: 'Mạnh, hợp plan/debug' },
+  { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5', efforts: CLAUDE_EFFORTS, defaultEffort: 'medium', description: 'Cân bằng, hợp code' },
+  { id: 'opus', label: 'Opus', efforts: CLAUDE_EFFORTS, defaultEffort: 'high', description: 'Bản Opus mới nhất mà CLI hỗ trợ' },
+  { id: 'sonnet', label: 'Sonnet', efforts: CLAUDE_EFFORTS, defaultEffort: 'medium', description: 'Bản Sonnet mới nhất mà CLI hỗ trợ' },
+  { id: 'haiku', label: 'Haiku', efforts: CLAUDE_EFFORTS, defaultEffort: 'low', description: 'Nhanh, rẻ' },
 ];
+
+const RESOLVED_FILE = path.join(DATA_DIR, 'claude-models.json');
+const resolved: Record<string, string> = readJson(RESOLVED_FILE, {});
+
+/** "claude-opus-5-5" → "Opus 5.5", "claude-haiku-4-5-20251001" → "Haiku 4.5" */
+function prettyClaude(id: string): string {
+  const m = /^claude-([a-z]+)-(\d+(?:-\d{1,2})?)(?:-\d{8})?$/.exec(id);
+  return m ? `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2].replace('-', '.')}` : id;
+}
+
+/** Remember which real model an alias resolved to (from the stream's init event). */
+export function noteClaudeModel(alias: string, model: string | undefined): void {
+  if (!model || !/^(opus|sonnet|haiku|fable)$/.test(alias) || !model.startsWith('claude-') || resolved[alias] === model) return;
+  resolved[alias] = model;
+  writeJson(RESOLVED_FILE, resolved);
+}
+
+function claudeModels(): ModelInfo[] {
+  return CLAUDE_MODELS.map((m) => (resolved[m.id] ? { ...m, label: `${prettyClaude(resolved[m.id])} (mới nhất)` } : m));
+}
 
 const CODEX_FALLBACK: ModelInfo[] = [
   { id: 'gpt-5.5', label: 'GPT-5.5', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium' },
@@ -41,7 +69,7 @@ export function getCatalog(): Catalog {
       fast: (m.service_tiers || []).some((t) => t.id === 'priority'),
       description: m.description,
     }));
-  return { claude: CLAUDE_MODELS, codex: codex.length ? codex : CODEX_FALLBACK, antigravity: [AGY_DEFAULT, ...agyModels] };
+  return { claude: claudeModels(), codex: codex.length ? codex : CODEX_FALLBACK, antigravity: [AGY_DEFAULT, ...agyModels] };
 }
 
 // ---- Antigravity (agy) ----

@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, execFile } from 'node:child_process';
-import { watch, type FSWatcher } from 'chokidar';
 import type { FsEntry } from '../shared/types.ts';
 import { dataFile, readJson, realpathSafe, writeJson } from './store.ts';
 import { run } from './catalog.ts';
@@ -16,11 +15,35 @@ export function recentProjects(): string[] {
   return readJson<string[]>(RECENT_FILE, []).filter((p) => fs.existsSync(p));
 }
 
-export function openProject(p: string): string {
+/** "~/x" or a symlinked path → the real absolute directory (throws if it isn't one). */
+function realDir(p: string): string {
   const abs = realpathSafe(p.replace(/^~(?=$|\/)/, process.env.HOME || ''));
   if (!fs.statSync(abs).isDirectory()) throw new Error('Không phải thư mục');
+  return abs;
+}
+
+export function openProject(p: string): string {
+  const abs = realDir(p);
   writeJson(RECENT_FILE, [abs, ...recentProjects().filter((x) => x !== abs)].slice(0, 15));
   return abs;
+}
+
+// ---- multi-root workspace: extra folders shown next to a project (like VS Code) ----
+const WORKSPACE_FILE = dataFile('workspaces.json');
+
+/** Extra folders added to `project`'s workspace (missing ones are skipped). */
+export function workspaceFolders(project: string): string[] {
+  const all = readJson<Record<string, string[]>>(WORKSPACE_FILE, {});
+  return (all[project] || []).filter((p) => p !== project && fs.existsSync(p));
+}
+
+export function setWorkspaceFolders(project: string, folders: string[]): string[] {
+  const clean = [...new Set(folders.map(realDir))].filter((f) => f !== project);
+  const all = readJson<Record<string, string[]>>(WORKSPACE_FILE, {});
+  if (clean.length) all[project] = clean;
+  else delete all[project];
+  writeJson(WORKSPACE_FILE, all);
+  return clean;
 }
 
 export function forgetProject(p: string): string[] {
@@ -303,27 +326,36 @@ export async function gitHead(root: string, rel: string): Promise<string | null>
 }
 
 // ---- file watching: one watcher per open project, shared by every window ----
-const watchers = new Map<string, { w: FSWatcher; refs: number }>();
+const watchers = new Map<string, { w: fs.FSWatcher; refs: number }>();
+// python virtualenvs (".pyenv-x", "site-packages") churn thousands of files nobody edits by hand
+const isHeavy = (seg: string) => HEAVY_DIRS.includes(seg) || seg.startsWith('.pyenv') || seg === 'site-packages' || seg.endsWith('.egg-info');
 
+/**
+ * Node's recursive fs.watch: FSEvents on macOS and ReadDirectoryChangesW on Windows need a single
+ * handle for the whole tree (chokidar opened one per file and ran out of descriptors on big repos).
+ */
 export function watchProject(root: string, onChange: (paths: string[]) => void): () => void {
   let entry = watchers.get(root);
   if (!entry) {
     let pending = new Set<string>();
     let timer: NodeJS.Timeout | undefined;
-    const w = watch(root, {
-      ignoreInitial: true,
-      ignored: (p: string) => HEAVY_DIRS.some((d) => p.includes(`${path.sep}${d}${path.sep}`) || p.endsWith(`${path.sep}${d}`)),
-      depth: 12,
-    });
-    w.on('all', (_ev, p) => {
-      pending.add(toPosix(path.relative(root, p)));
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        const paths = [...pending];
-        pending = new Set();
-        onChange(paths);
-      }, 300);
-    });
+    let w: fs.FSWatcher;
+    try {
+      w = fs.watch(root, { recursive: true }, (_ev, file) => {
+        if (!file) return;
+        const rel = toPosix(String(file));
+        if (rel.split('/').some(isHeavy) || rel.endsWith('.DS_Store')) return;
+        pending.add(rel);
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          const paths = [...pending];
+          pending = new Set();
+          onChange(paths);
+        }, 300);
+      });
+    } catch {
+      return () => {};
+    }
     w.on('error', () => {});
     entry = { w, refs: 0 };
     watchers.set(root, entry);
@@ -333,7 +365,7 @@ export function watchProject(root: string, onChange: (paths: string[]) => void):
     const e = watchers.get(root);
     if (!e) return;
     if (--e.refs <= 0) {
-      void e.w.close();
+      e.w.close();
       watchers.delete(root);
     }
   };

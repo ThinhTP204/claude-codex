@@ -24,7 +24,8 @@ import {
 } from './conversations.ts';
 import { approve, rerun, startPipeline, stopPipeline } from './pipeline.ts';
 import { deletePipeline, getPipelines, getRoles, savePipeline, saveRoles, DEFAULT_ROLES } from './roles.ts';
-import { browseDirs, resolveFileRef, forgetProject, gitHead, gitStatus, listDir, openProject, pickFolder, readFile, recentProjects, watchProject, writeFile } from './projects.ts';
+import { browseDirs, resolveFileRef, forgetProject, setWorkspaceFolders, workspaceFolders, gitHead, gitStatus, listDir, openProject, pickFolder, readFile, recentProjects, watchProject, writeFile } from './projects.ts';
+import { realpathSafe } from './store.ts';
 
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 const MIME: Record<string, string> = {
@@ -206,8 +207,12 @@ export function start(opts: StartOptions): Promise<http.Server> {
     if (m === 'GET' && p === '/projects') return recentProjects();
     if (m === 'POST' && p === '/projects/pick') {
       const picked = await pickFolder();
-      return { path: picked.path ? openProject(picked.path) : null, error: picked.error };
+      // ?open=0: just choose a folder (e.g. to add to the workspace), don't make it the project
+      const chosen = picked.path ? (q('open') === '0' ? realpathSafe(picked.path) : openProject(picked.path)) : null;
+      return { path: chosen, error: picked.error };
     }
+    if (m === 'GET' && p === '/workspace') return workspaceFolders(project());
+    if (m === 'PUT' && p === '/workspace') return setWorkspaceFolders(project(), (await body<{ folders: string[] }>(req)).folders || []);
     if (m === 'GET' && p === '/browse') return browseDirs(q('dir') || undefined, q('hidden') === '1');
     if (m === 'GET' && p === '/env') return { platform: process.platform, home: os.homedir(), sep: path.sep };
     if (m === 'POST' && p === '/projects/forget') return forgetProject((await body<{ path: string }>(req)).path);
@@ -320,12 +325,12 @@ export function start(opts: StartOptions): Promise<http.Server> {
         const msg = JSON.parse(String(raw));
         if (msg.type === 'term:input') return writeTerm(msg.id, String(msg.data));
         if (msg.type === 'term:resize') return resizeTerm(msg.id, Number(msg.cols), Number(msg.rows));
-        if (msg.type === 'watch' && typeof msg.project === 'string' && fs.existsSync(msg.project)) {
+        if (msg.type === 'watch') {
+          // one window watches its project plus any extra workspace folders
+          const roots = (Array.isArray(msg.projects) ? msg.projects : [msg.project]).filter((r: unknown): r is string => typeof r === 'string' && fs.existsSync(r));
           unwatch.get(ws)?.();
-          unwatch.set(
-            ws,
-            watchProject(msg.project, (paths) => send({ type: 'fs', root: msg.project, paths })),
-          );
+          const offs = roots.map((root: string) => watchProject(root, (paths) => send({ type: 'fs', root, paths })));
+          unwatch.set(ws, () => offs.forEach((off: () => void) => off()));
         }
       } catch {
         /* ignore */

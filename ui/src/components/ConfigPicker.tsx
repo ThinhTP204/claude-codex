@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Gauge, Settings2, Shield, Zap } from 'lucide-react';
 import type { Agent, RunConfig } from '../../../shared/types.ts';
 import { useStore } from '../store.ts';
@@ -20,7 +21,9 @@ export function ConfigPicker({
   const agents = (['claude', 'codex', 'antigravity'] as Agent[]).filter((a) => a !== 'antigravity' || health?.antigravity?.installed || value.agent === a);
   const models = catalog?.[value.agent] || [];
   const model = models.find((m) => m.id === value.model);
-  const efforts = model?.efforts || [];
+  // a model typed by hand still gets the agent's usual effort levels
+  const efforts = model?.efforts || (value.model && value.agent !== 'antigravity' ? models[0]?.efforts || [] : []);
+  const cliVersion = health?.[value.agent]?.version;
 
   const setAgent = (agent: Agent) => {
     if (agent === value.agent) return;
@@ -29,7 +32,7 @@ export function ConfigPicker({
   };
   const setModel = (id: string) => {
     const m = models.find((x) => x.id === id);
-    const effort = value.effort && m?.efforts.includes(value.effort) ? value.effort : m?.defaultEffort;
+    const effort = !m ? value.effort : value.effort && m.efforts.includes(value.effort) ? value.effort : m.defaultEffort;
     onChange({ ...value, model: id, effort, fast: m?.fast ? value.fast : false });
   };
   const perm = PERMISSIONS.find((p) => p.id === value.permission);
@@ -60,7 +63,11 @@ export function ConfigPicker({
         value={value.model}
         onChange={setModel}
         width={300}
-        options={models.map((m) => ({ value: m.id, label: m.label, hint: m.description?.slice(0, 80) }))}
+        options={models.map((m) => {
+          const old = !!m.minCli && !!cliVersion && olderThan(cliVersion, m.minCli);
+          return { value: m.id, label: m.label, hint: old ? `Cần CLI ≥ ${m.minCli} (đang ${cliVersion}) · chạy "${value.agent} update"` : m.description?.slice(0, 80) };
+        })}
+        footer={(close) => <CustomModel agent={value.agent} onPick={(id) => (setModel(id), close())} />}
         display={<span className="truncate font-medium text-fg">{model?.label || value.model || (value.agent === 'antigravity' ? 'Mặc định' : 'Chọn model')}</span>}
       />
 
@@ -188,5 +195,33 @@ function Advanced({ value, onChange, fastAvailable }: { value: RunConfig; onChan
         />
       </Field>
     </div>
+  );
+}
+
+/** "2.1.228" < "2.1.280" */
+function olderThan(a: string, b: string): boolean {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d < 0;
+  }
+  return false;
+}
+
+/** Free-text model id for anything not in the list (new releases, pinned versions). */
+function CustomModel({ agent, onPick }: { agent: Agent; onPick: (id: string) => void }) {
+  const [v, setV] = useState('');
+  const example = agent === 'claude' ? 'claude-opus-5-5' : agent === 'codex' ? 'gpt-6.1-sol' : 'gemini-3-pro';
+  return (
+    <form
+      className="mt-1 border-t border-line px-1 pt-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (v.trim()) onPick(v.trim());
+      }}
+    >
+      <input className={cx(inputCls, 'h-7 text-[12.5px]')} placeholder={`Model khác, vd ${example} ↵`} value={v} onChange={(e) => setV(e.target.value)} />
+    </form>
   );
 }

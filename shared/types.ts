@@ -170,6 +170,8 @@ export interface ModelInfo {
   defaultEffort?: string;
   fast?: boolean;
   description?: string;
+  /** lowest CLI version that can run this model */
+  minCli?: string;
 }
 
 export interface Catalog {

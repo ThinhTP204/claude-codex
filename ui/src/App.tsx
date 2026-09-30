@@ -83,12 +83,14 @@ function RowResizer({ onDrag }: { onDrag: (dy: number) => void }) {
 export function App() {
   const noToken = useStore((s) => s.noToken);
   const tabs = useStore((s) => s.tabs);
+  const project = useStore((s) => s.project);
   const activeTab = useStore((s) => s.activeTab);
   const showRoles = useStore((s) => s.showRoles);
   const showFolderBrowser = useStore((s) => s.showFolderBrowser);
   const toast = useStore((s) => s.toast);
   const conv = useStore((s) => s.conv);
   const gitFiles = useStore((s) => s.git.files);
+  const rootGit = useStore((s) => s.rootGit);
   const [leftW, setLeftW] = useWidth('leftW', 272);
   const [rightW, setRightW] = useWidth('rightW', 280);
   const [leftOpen, setLeftOpen] = useWidth('leftOpen', 1);
@@ -167,6 +169,8 @@ export function App() {
               const active = t.id === activeTab;
               let icon: ReactNode;
               let label: string;
+              let code: string | undefined;
+              let hint: string | undefined;
               if (t.kind === 'chat') {
                 icon = <MessageSquare size={14} />;
                 label = conv?.title && conv.title !== 'Cuộc trò chuyện mới' ? conv.title : 'Chat';
@@ -179,13 +183,16 @@ export function App() {
               } else {
                 icon = <FileIcon name={t.path} size={14} />;
                 label = t.path.split('/').pop()!;
+                code = (t.root ? rootGit[t.root]?.files : gitFiles)?.[t.path];
+                // same file name open from another folder: say which one (like VS Code)
+                if (tabs.some((o) => o !== t && o.kind === 'file' && o.path.split('/').pop() === label)) hint = (t.root || project || '').split(/[\\/]/).pop();
               }
               return (
                 <div
                   key={t.id}
                   onClick={() => setState({ activeTab: t.id })}
                   onAuxClick={(e) => e.button === 1 && (t.kind === 'file' || t.kind === 'preview') && closeTab(t.id)}
-                  title={t.kind === 'file' ? t.path : label}
+                  title={t.kind === 'file' ? (t.root ? `${t.root.split(/[\\/]/).pop()} › ${t.path}` : t.path) : label}
                   className={cx(
                     'group relative flex h-9 max-w-[240px] shrink-0 cursor-pointer items-center gap-1.5 border-r border-line px-3 text-[13px]',
                     active ? 'bg-bg text-fg' : 'text-muted hover:bg-hover/60 hover:text-fg',
@@ -195,10 +202,11 @@ export function App() {
                   {icon}
                   <span
                     className="truncate"
-                    style={{ color: t.kind === 'file' && gitFiles[t.path] ? `var(--git-${gitFiles[t.path] === 'M' ? 'modified' : gitFiles[t.path] === 'D' ? 'deleted' : 'added'})` : undefined }}
+                    style={{ color: code ? `var(--git-${code === 'M' ? 'modified' : code === 'D' ? 'deleted' : 'added'})` : undefined }}
                   >
                     {label}
                   </span>
+                  {hint && <span className="truncate text-[11.5px] text-faint">{hint}</span>}
                   {t.kind === 'flow' && running && <Spinner size={11} className="text-accent" />}
                   {t.kind === 'flow' && awaiting && <span className="h-1.5 w-1.5 rounded-full bg-warn" />}
                   {(t.kind === 'file' || t.kind === 'preview') && (
@@ -238,7 +246,7 @@ export function App() {
                 <ChatView />
               ) : (
                 <Suspense fallback={<div className="grid h-full place-items-center"><Spinner /></div>}>
-                  {t.kind === 'flow' ? flowSeen ? <FlowView /> : null : t.kind === 'preview' ? <PreviewView url={t.url} /> : <FileView path={t.path} diff={t.diff} line={t.line} nonce={t.nonce} />}
+                  {t.kind === 'flow' ? flowSeen ? <FlowView /> : null : t.kind === 'preview' ? <PreviewView url={t.url} /> : <FileView path={t.path} root={t.root} diff={t.diff} line={t.line} nonce={t.nonce} />}
                 </Suspense>
               )}
             </div>

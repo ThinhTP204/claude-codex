@@ -7,7 +7,10 @@ export type Tab =
   | { id: string; kind: 'chat' }
   | { id: string; kind: 'flow' }
   | { id: string; kind: 'preview'; url: string }
-  | { id: string; kind: 'file'; path: string; diff?: boolean; line?: number; nonce?: number };
+  /** root: a workspace folder other than the project (undefined = the project itself) */
+  | { id: string; kind: 'file'; path: string; root?: string; diff?: boolean; line?: number; nonce?: number };
+
+type GitStatus = { branch?: string; files: Record<string, string> };
 
 export interface State {
   project?: string;
@@ -25,7 +28,15 @@ export interface State {
   activeTab: string;
   composer: RunConfig;
   roleId?: string;
-  git: { branch?: string; files: Record<string, string> };
+  git: GitStatus;
+  /** extra folders in this project's workspace (VS Code multi-root) */
+  folders: string[];
+  /** git status of each extra folder */
+  rootGit: Record<string, GitStatus>;
+  /** repo shown in Source Control (undefined = the project) */
+  scmRoot?: string;
+  /** what the in-app folder browser does with the chosen folder */
+  folderBrowserMode: 'open' | 'add';
   /** bumps whenever files change on disk */
   fsVersion: number;
   /** paths touched recently (highlighted in the explorer) */
@@ -40,6 +51,8 @@ export interface State {
   termOpen: boolean;
   /** Source Control panel */
   gitInfo?: GitInfo;
+  /** why the Source Control repo could not be read (instead of spinning forever) */
+  gitError?: string;
   gitBusy?: string;
   rightTab: 'files' | 'scm';
   /** in-app folder picker (default on Windows, fallback elsewhere) */
@@ -88,6 +101,9 @@ let state: State = {
   composer: LS.get<RunConfig>('composer', { agent: 'claude', model: 'sonnet', effort: 'medium', permission: 'write' }),
   roleId: LS.get<string | undefined>('roleId', undefined),
   git: { files: {} },
+  folders: [],
+  rootGit: {},
+  folderBrowserMode: 'open',
   fsVersion: 0,
   touched: {},
   showRoles: false,
@@ -141,14 +157,85 @@ export async function refreshList(): Promise<void> {
   if (list && project === state.project) setState({ convList: list });
 }
 
+/** Folder shown in Source Control. */
+export const scmRootOf = (s: State) => (s.scmRoot && s.folders.includes(s.scmRoot) ? s.scmRoot : s.project);
+
+/** Key for per-file maps (touched…) that works across workspace folders. */
+export const fileKey = (path: string, root?: string) => (root ? `${root}::${path}` : path);
+
 export async function refreshGit(): Promise<void> {
   const project = state.project;
   if (!project) return;
-  const [g, info] = await Promise.all([
-    api<State['git']>('GET', `/git/status${qs({ project })}`).catch(() => ({ files: {} })),
-    api<GitInfo>('GET', `/git/info${qs({ project })}`).catch(() => undefined),
+  const scm = scmRootOf(state)!;
+  const status = (root: string) => api<GitStatus>('GET', `/git/status${qs({ project: root })}`).catch(() => ({ files: {} }));
+  let gitError: string | undefined;
+  const [g, info, ...extra] = await Promise.all([
+    status(project),
+    api<GitInfo>('GET', `/git/info${qs({ project: scm })}`).catch((e) => {
+      gitError = (e as Error).message;
+      return undefined;
+    }),
+    ...state.folders.map(status),
   ]);
-  if (project === state.project) setState({ git: g, gitInfo: info });
+  if (project !== state.project) return;
+  const rootGit: Record<string, GitStatus> = {};
+  state.folders.forEach((f, i) => (rootGit[f] = extra[i] || { files: {} }));
+  setState({ git: g, rootGit, ...(scm === scmRootOf(state) ? { gitInfo: info, gitError } : {}) });
+}
+
+export function setScmRoot(root: string | undefined): void {
+  setState({ scmRoot: root === state.project ? undefined : root, gitInfo: undefined });
+  void refreshGit();
+}
+
+function watchAll(): void {
+  if (state.project) wsSend({ type: 'watch', projects: [state.project, ...state.folders] });
+}
+
+async function loadWorkspace(project: string): Promise<void> {
+  const folders = await api<string[]>('GET', `/workspace${qs({ project })}`).catch(() => []);
+  if (project !== state.project) return;
+  setState({ folders });
+  watchAll();
+  void refreshGit();
+}
+
+async function saveWorkspace(folders: string[]): Promise<void> {
+  const project = state.project;
+  if (!project) return;
+  const r = await safe(api<string[]>('PUT', `/workspace${qs({ project })}`, { folders }));
+  if (!r || project !== state.project) return;
+  setState((s) => ({ folders: r, scmRoot: s.scmRoot && r.includes(s.scmRoot) ? s.scmRoot : undefined }));
+  watchAll();
+  void refreshGit();
+}
+
+/** Add a folder next to the project in the Explorer (and let agents reach it). */
+export async function addWorkspaceFolder(path?: string): Promise<void> {
+  if (!state.project) return;
+  if (!path) {
+    if (state.platform === 'win32') {
+      setState({ showFolderBrowser: true, folderBrowserMode: 'add' });
+      return;
+    }
+    const r = await safe(api<{ path: string | null; error?: string }>('POST', `/projects/pick${qs({ open: '0' })}`));
+    if (r?.error) {
+      toast(`Không mở được hộp thoại hệ thống (${r.error}), dùng trình chọn thư mục của AgentDesk.`, 'info');
+      setState({ showFolderBrowser: true, folderBrowserMode: 'add' });
+    }
+    if (!r?.path) return;
+    path = r.path;
+  }
+  if (path === state.project || state.folders.includes(path)) {
+    toast('Thư mục này đã có trong workspace', 'info');
+    return;
+  }
+  await saveWorkspace([...state.folders, path]);
+}
+
+export async function removeWorkspaceFolder(path: string): Promise<void> {
+  setState((s) => ({ tabs: s.tabs.filter((t) => !(t.kind === 'file' && t.root === path)), activeTab: s.activeTab.startsWith(`file:${path}::`) ? 'chat' : s.activeTab }));
+  await saveWorkspace(state.folders.filter((f) => f !== path));
 }
 
 export function setRightTab(tab: 'files' | 'scm'): void {
@@ -170,12 +257,12 @@ const GIT_LABEL: Record<string, string> = {
 
 /** Run a Source Control action; the server answers with the fresh repo state. */
 export async function gitAction(action: string, body: unknown = {}): Promise<boolean> {
-  const project = state.project;
+  const project = scmRootOf(state);
   if (!project || state.gitBusy) return false;
   setState({ gitBusy: GIT_LABEL[action] || action });
   try {
     const r = await api<{ info: GitInfo; out?: string }>('POST', `/git/${action}${qs({ project })}`, body);
-    if (project === state.project) setState({ gitInfo: r.info });
+    if (project === scmRootOf(state)) setState({ gitInfo: r.info });
     void refreshGit();
     return true;
   } catch (e) {
@@ -203,10 +290,14 @@ export async function openProject(path: string): Promise<void> {
     devUrl: undefined,
     activeTab: 'chat',
     touched: {},
+    folders: [],
+    rootGit: {},
+    scmRoot: undefined,
+    gitInfo: undefined,
   }));
   wsSend({ type: 'watch', project: r.path });
   void refreshList();
-  void refreshGit();
+  void loadWorkspace(r.path);
   void loadTerms();
   const last = LS.get<string | undefined>(`conv:${r.path}`, undefined);
   if (last) void openConv(last);
@@ -396,28 +487,28 @@ export async function consumeCodexReset(creditId: string): Promise<void> {
   toast(RESET_OUTCOME[r.outcome] || `Kết quả: ${r.outcome}`, r.outcome === 'reset' ? 'info' : 'error');
 }
 
-export function openFile(path: string, opts: { diff?: boolean; line?: number } = {}): void {
-  const id = `file:${path}`;
+export function openFile(path: string, opts: { diff?: boolean; line?: number; root?: string } = {}): void {
+  const root = opts.root && opts.root !== state.project ? opts.root : undefined;
+  const id = `file:${fileKey(path, root)}`;
   // nonce: jumping to the same line twice still scrolls
   const patch = { diff: opts.diff, line: opts.line, nonce: Date.now() };
   setState((s) => ({
     tabs: s.tabs.some((t) => t.id === id)
       ? s.tabs.map((t) => (t.id === id && t.kind === 'file' ? { ...t, ...patch } : t))
-      : [...s.tabs, { id, kind: 'file', path, ...patch }],
+      : [...s.tabs, { id, kind: 'file', path, root, ...patch }],
     activeTab: id,
   }));
 }
 
 /** Open a file mentioned by an agent ("src/a.tsx:12", absolute path, or just "a.tsx"). */
 export async function openFileRef(ref: string): Promise<void> {
-  const project = state.project;
-  if (!project) return;
-  const r = await api<{ path?: string; line?: number; candidates?: string[] }>('GET', `/fs/resolve${qs({ project, ref })}`).catch(() => ({}) as { path?: string });
-  if (!r.path) {
-    toast(`Không tìm thấy file "${ref}" trong project`, 'info');
-    return;
+  if (!state.project) return;
+  // the project first, then the other workspace folders
+  for (const root of [state.project, ...state.folders]) {
+    const r = await api<{ path?: string; line?: number }>('GET', `/fs/resolve${qs({ project: root, ref })}`).catch(() => ({}) as { path?: string; line?: number });
+    if (r.path) return openFile(r.path, { line: r.line, root });
   }
-  openFile(r.path, { line: 'line' in r ? r.line : undefined });
+  toast(`Không tìm thấy file "${ref}" trong workspace`, 'info');
 }
 
 export function closeTab(id: string): void {
@@ -499,10 +590,11 @@ function onMessage(msg: ServerMessage): void {
       break;
     }
     case 'fs':
-      if (msg.root === state.project) {
+      if (msg.root === state.project || state.folders.includes(msg.root)) {
         const now = Date.now();
         const touched = { ...state.touched };
-        for (const p of msg.paths) touched[p] = now;
+        const root = msg.root === state.project ? undefined : msg.root;
+        for (const p of msg.paths) touched[fileKey(p, root)] = now;
         setState((s) => ({ fsVersion: s.fsVersion + 1, touched }));
         clearTimeout(gitTimer);
         gitTimer = setTimeout(refreshGit, 400);
@@ -514,7 +606,7 @@ function onMessage(msg: ServerMessage): void {
 export function boot(): void {
   if (!TOKEN) return;
   connectWs(onMessage, () => {
-    if (state.project) wsSend({ type: 'watch', project: state.project });
+    watchAll();
     if (state.convId) void openConv(state.convId);
     void refreshList();
   });

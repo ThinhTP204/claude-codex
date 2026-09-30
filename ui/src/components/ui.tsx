@@ -180,6 +180,7 @@ export function Select<T extends string>({
   placement,
   width = 260,
   className,
+  footer,
 }: {
   value: T | undefined;
   options: Option<T>[];
@@ -189,6 +190,8 @@ export function Select<T extends string>({
   placement?: 'bottom-start' | 'top-start' | 'bottom-end' | 'top-end';
   width?: number;
   className?: string;
+  /** extra content under the options (e.g. a free-text entry) */
+  footer?: (close: () => void) => ReactNode;
 }) {
   const cur = options.find((o) => o.value === value);
   return (
@@ -216,8 +219,9 @@ export function Select<T extends string>({
         </button>
       )}
     >
-      {(close) =>
-        options.map((o) => (
+      {(close) => (
+        <>
+        {options.map((o) => (
           <button
             key={o.value}
             type="button"
@@ -238,8 +242,10 @@ export function Select<T extends string>({
             </span>
             {o.value === value && <Check size={14} className="mt-0.5 shrink-0 text-accent" />}
           </button>
-        ))
-      }
+        ))}
+        {footer?.(close)}
+        </>
+      )}
     </Popover>
   );
 }

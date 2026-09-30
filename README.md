@@ -163,6 +163,12 @@ Sidebar phải có hai tab: **Explorer** và **Source Control**. Badge trên tab
 - File đã thay đổi so với git có nút **Diff** để so với HEAD.
 - File bị agent sửa trong 5 phút gần nhất có chấm cam. Nếu anh không đang sửa dở, file đang mở tự tải lại nội dung mới.
 
+**Nhiều repo cùng lúc (giống workspace của VS Code):** bấm nút 📁+ trên thanh Explorer để thêm một thư mục khác vào workspace của project đang mở.
+- Explorer hiện mỗi thư mục thành một nhánh riêng, có tên nhánh git và màu thay đổi. Di chuột vào tên thư mục rồi bấm × để bỏ khỏi workspace (file không bị xoá).
+- Source Control có danh sách **Repositories**. Chọn repo nào thì commit, push, đổi nhánh trên repo đó.
+- Agent (Claude, Codex) tự được cấp quyền đọc và sửa các thư mục trong workspace, nên có thể giao việc liên quan tới cả hai repo trong cùng một cuộc chat.
+- Workspace được nhớ theo project, lần sau mở lại vẫn còn.
+
 ### Phím tắt
 
 | Phím | Tác dụng |

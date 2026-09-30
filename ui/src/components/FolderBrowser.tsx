@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowUp, Check, ChevronRight, Eye, EyeOff, Folder, FolderGit2, HardDrive, Home, X } from 'lucide-react';
 import { api, qs } from '../api.ts';
-import { openProject, setState } from '../store.ts';
+import { addWorkspaceFolder, getState, openProject, setState } from '../store.ts';
 import { Spinner, cx, inputCls } from './ui.tsx';
 
 interface BrowseResult {
@@ -39,10 +39,11 @@ export function FolderBrowser() {
     void go(data?.path);
   }, [hidden]);
 
-  const close = () => setState({ showFolderBrowser: false });
+  const close = () => setState({ showFolderBrowser: false, folderBrowserMode: 'open' });
   const choose = async (p: string) => {
+    const add = getState().folderBrowserMode === 'add';
     close();
-    await openProject(p);
+    await (add ? addWorkspaceFolder(p) : openProject(p));
   };
 
   const sep = data?.path.includes('\\') ? '\\' : '/';

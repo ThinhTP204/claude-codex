@@ -2,6 +2,8 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import readline from 'node:readline';
 import type { Block, RunConfig, Usage } from '../shared/types.ts';
 import { killTree, resolveCommand, spawnOpts } from './platform.ts';
+import { noteClaudeModel } from './catalog.ts';
+import { workspaceFolders } from './projects.ts';
 
 export interface RunEvents {
   onSession(id: string, model?: string): void;
@@ -102,6 +104,9 @@ export function summarizeToolInput(name: string, input: Record<string, unknown>)
 }
 
 export function startRun(cfg: RunConfig, prompt: string, cwd: string, resume: string | undefined, ev: RunEvents): RunHandle {
+  // folders in the project's workspace are reachable by the agent too
+  const extra = workspaceFolders(cwd);
+  if (extra.length) cfg = { ...cfg, addDirs: [...new Set([...(cfg.addDirs || []), ...extra])] };
   const isClaude = cfg.agent === 'claude';
   const isAgy = cfg.agent === 'antigravity';
   const bin = isClaude ? 'claude' : isAgy ? 'agy' : 'codex';
@@ -169,7 +174,10 @@ export function startRun(cfg: RunConfig, prompt: string, cwd: string, resume: st
     if (e.parent_tool_use_id) return; // sub-agent chatter
     switch (e.type) {
       case 'system':
-        if (e.subtype === 'init') ev.onSession(e.session_id, e.model);
+        if (e.subtype === 'init') {
+          noteClaudeModel(cfg.model, e.model);
+          ev.onSession(e.session_id, e.model);
+        }
         break;
       case 'stream_event': {
         const d = e.event;

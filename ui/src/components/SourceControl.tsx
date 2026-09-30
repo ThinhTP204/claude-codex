@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import type { GitBranch as Branch, GitCommit, GitFile } from '../../../shared/types.ts';
 import { api, qs } from '../api.ts';
-import { gitAction, openFile, refreshGit, safe, toast, useStore } from '../store.ts';
+import { getState, gitAction, openFile, refreshGit, safe, scmRootOf, setScmRoot, toast, useStore } from '../store.ts';
 import { FileIcon } from './Explorer.tsx';
 import { Popover, Spinner, cx } from './ui.tsx';
 
@@ -36,7 +36,7 @@ function FileRow({ f, code, staged }: { f: GitFile; code: string; staged: boolea
   const busy = !!useStore((s) => s.gitBusy);
   return (
     <div
-      onClick={() => code !== 'D' && openFile(f.path, { diff: !f.untracked })}
+      onClick={() => code !== 'D' && openFile(f.path, { diff: !f.untracked, root: scmRootOf(getState()) })}
       title={`${f.path} · ${f.conflict ? 'Xung đột' : LABEL[code] || code}${code !== 'D' ? ' · bấm để xem diff' : ''}`}
       className="group flex h-[24px] cursor-pointer items-center gap-1.5 pl-5 pr-2 text-[13px] hover:bg-hover"
     >
@@ -97,7 +97,7 @@ function Group({ title, files, staged, action }: { title: string; files: GitFile
 
 function BranchPicker() {
   const info = useStore((s) => s.gitInfo);
-  const project = useStore((s) => s.project);
+  const project = useStore(scmRootOf);
   const busy = !!useStore((s) => s.gitBusy);
   const [branches, setBranches] = useState<{ local: Branch[]; remote: Branch[] }>();
   const [q, setQ] = useState('');
@@ -216,7 +216,7 @@ function BranchPicker() {
 }
 
 function History() {
-  const project = useStore((s) => s.project);
+  const project = useStore(scmRootOf);
   const head = useStore((s) => s.gitInfo?.lastCommit?.hash);
   const [open, setOpen] = useState(false);
   const [log, setLog] = useState<GitCommit[]>();
@@ -255,10 +255,55 @@ function History() {
   );
 }
 
-export function SourceControl() {
-  const info = useStore((s) => s.gitInfo);
-  const busy = useStore((s) => s.gitBusy);
+/** Multi-root workspace: pick which folder's repo the panel manages (like VS Code's Repositories view). */
+function RepoPicker() {
   const project = useStore((s) => s.project);
+  const folders = useStore((s) => s.folders);
+  const current = useStore(scmRootOf);
+  const rootGit = useStore((s) => s.rootGit);
+  const primaryCount = useStore((s) => Object.keys(s.git.files).length);
+  const primaryBranch = useStore((s) => s.git.branch);
+  if (!project || !folders.length) return null;
+  return (
+    <div className="mb-1.5 border-b border-line px-2 pb-1.5">
+      <div className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Repositories</div>
+      {[project, ...folders].map((root) => {
+        const n = root === project ? primaryCount : Object.keys(rootGit[root]?.files || {}).length;
+        const branch = root === project ? primaryBranch : rootGit[root]?.branch;
+        return (
+          <button
+            key={root}
+            type="button"
+            title={root}
+            onClick={() => setScmRoot(root)}
+            className={cx('flex h-6 w-full items-center gap-1.5 rounded px-1.5 text-left text-[13px] hover:bg-hover', root === current && 'bg-hover text-fg')}
+          >
+            <span className="min-w-0 flex-1 truncate">{root.split(/[\\/]/).pop()}</span>
+            {branch && <span className="shrink-0 truncate text-[11.5px] text-faint">{branch}</span>}
+            {n > 0 && <span className="shrink-0 rounded-full bg-accent/15 px-1.5 text-[10.5px] font-semibold text-accent">{n}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function SourceControl() {
+  return (
+    <div className="flex h-full flex-col">
+      <RepoPicker />
+      <div className="min-h-0 flex-1">
+        <RepoPanel />
+      </div>
+    </div>
+  );
+}
+
+function RepoPanel() {
+  const info = useStore((s) => s.gitInfo);
+  const gitError = useStore((s) => s.gitError);
+  const busy = useStore((s) => s.gitBusy);
+  const project = useStore(scmRootOf);
   const composerAgent = useStore((s) => s.composer.agent);
   const [msg, setMsg] = useState('');
   const [suggesting, setSuggesting] = useState(false);
@@ -283,7 +328,17 @@ export function SourceControl() {
   const total = info?.files.length ?? 0;
 
   if (!project) return <div className="p-4 text-[13px] text-faint">Chưa mở project</div>;
-  if (!info) return <Spinner className="mx-auto mt-6 block" />;
+  if (!info)
+    return gitError ? (
+      <div className="space-y-2 p-4 text-[13px] text-muted">
+        <p className="text-err">Không đọc được git: {gitError}</p>
+        <button type="button" onClick={() => void refreshGit()} className="rounded-lg border border-line px-3 py-1 hover:bg-hover hover:text-fg">
+          Thử lại
+        </button>
+      </div>
+    ) : (
+      <Spinner className="mx-auto mt-6 block" />
+    );
   if (!info.isRepo)
     return (
       <div className="space-y-3 p-4 text-[13px] text-muted">
@@ -491,4 +546,5 @@ export function SourceControl() {
 }
 
 /** Count shown on the Source Control tab */
-export const useChangeCount = () => useStore((s) => s.gitInfo?.files.length ?? 0);
+export const useChangeCount = () =>
+  useStore((s) => Object.keys(s.git.files).length + Object.values(s.rootGit).reduce((n, g) => n + Object.keys(g.files).length, 0));

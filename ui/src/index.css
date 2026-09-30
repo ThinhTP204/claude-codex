@@ -321,6 +321,14 @@ button:disabled {
   border: 1px solid var(--line);
   padding: 6px 10px;
   text-align: left;
+  vertical-align: top;
+  /* "anywhere" (inherited) lets the table squeeze a column to one letter per line;
+     break-word only splits a word when it can't fit, and the table scrolls instead */
+  overflow-wrap: break-word;
+  min-width: 3.5em;
+}
+.prose-chat th {
+  white-space: nowrap;
 }
 .prose-chat th {
   background: var(--code-bg);

@@ -3,7 +3,7 @@ import Editor, { DiffEditor } from '@monaco-editor/react';
 import { Columns2, RotateCcw, Save } from 'lucide-react';
 import '../monaco.ts';
 import { api, qs } from '../api.ts';
-import { safe, toast, useStore } from '../store.ts';
+import { fileKey, safe, toast, useStore } from '../store.ts';
 import { FileIcon } from './Explorer.tsx';
 import { Spinner, cx } from './ui.tsx';
 import { useIsDark } from '../theme.ts';
@@ -32,11 +32,17 @@ interface FileData {
   head?: string | null;
 }
 
-export function FileView({ path, diff: openInDiff, line, nonce }: { path: string; diff?: boolean; line?: number; nonce?: number }) {
-  const project = useStore((s) => s.project);
+export function FileView({ path, root, diff: openInDiff, line, nonce }: { path: string; root?: string; diff?: boolean; line?: number; nonce?: number }) {
+  const primary = useStore((s) => s.project);
+  const project = root || primary;
   const fsVersion = useStore((s) => s.fsVersion);
-  const touched = useStore((s) => s.touched[path]);
-  const gitCode = useStore((s) => s.git.files[path]);
+  const touched = useStore((s) => s.touched[fileKey(path, root)]);
+  const gitCode = useStore((s) => (root ? s.rootGit[root]?.files[path] : s.git.files[path]));
+  // unique across workspace folders (two repos can both have src/index.ts)
+  const fileId = fileKey(path, root);
+  const multiRoot = useStore((s) => s.folders.length > 0);
+  // with several workspace folders, the breadcrumb starts at the folder name (like VS Code)
+  const crumbs = multiRoot && project ? [project.split(/[\\/]/).pop()!, ...path.split('/')] : path.split('/');
   const dark = useIsDark();
   const [data, setData] = useState<FileData>();
   const [value, setValue] = useState('');
@@ -48,6 +54,11 @@ export function FileView({ path, diff: openInDiff, line, nonce }: { path: string
   dirtyRef.current = dirty;
   const editorRef = useRef<any>(null);
   const [editorReady, setEditorReady] = useState(0);
+  // a hidden tab's editor measured 0px: re-measure as soon as it is shown again
+  const active = useStore((s) => s.activeTab === `file:${fileId}`);
+  useEffect(() => {
+    if (active) requestAnimationFrame(() => editorRef.current?.layout());
+  }, [active, editorReady]);
 
   // jump to the line an agent pointed at (re-runs for every click thanks to nonce)
   useEffect(() => {
@@ -120,7 +131,7 @@ export function FileView({ path, diff: openInDiff, line, nonce }: { path: string
       <div className="flex h-8 shrink-0 items-center gap-2 border-b border-line bg-panel px-3 text-[12.5px] text-muted">
         <FileIcon name={path} size={14} />
         <span className="truncate">
-          {path.split('/').map((seg, i, a) => (
+          {crumbs.map((seg, i, a) => (
             <span key={i}>
               {i > 0 && <span className="mx-1 text-faint">›</span>}
               <span className={cx(i === a.length - 1 && 'text-fg')}>{seg}</span>
@@ -157,7 +168,7 @@ export function FileView({ path, diff: openInDiff, line, nonce }: { path: string
           />
         ) : (
           <Editor
-            path={path}
+            path={fileId}
             value={value}
             language={langOf(path)}
             theme={theme}
@@ -166,12 +177,12 @@ export function FileView({ path, diff: openInDiff, line, nonce }: { path: string
             onMount={(editor, m) => {
               editorRef.current = editor;
               setEditorReady((n) => n + 1);
-              editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => document.dispatchEvent(new CustomEvent('agentdesk-save', { detail: path })));
+              editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => document.dispatchEvent(new CustomEvent('agentdesk-save', { detail: fileId })));
             }}
           />
         )}
       </div>
-      <SaveListener path={path} onSave={save} />
+      <SaveListener path={fileId} onSave={save} />
     </div>
   );
 }

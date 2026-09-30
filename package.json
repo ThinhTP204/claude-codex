@@ -17,7 +17,6 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "chokidar": "^5.0.0",
     "ws": "^8.22.0"
   },
   "devDependencies": {
