@@ -5,7 +5,8 @@ import { TerminalPanel } from './components/TerminalPanel.tsx';
 import { PreviewView } from './components/PreviewView.tsx';
 import { Sidebar } from './components/Sidebar.tsx';
 import { ChatView } from './components/ChatView.tsx';
-import { Explorer, FileIcon } from './components/Explorer.tsx';
+import { FileIcon } from './components/Explorer.tsx';
+import { RightPanel } from './components/RightPanel.tsx';
 import { RolesDialog } from './components/RolesDialog.tsx';
 import { FolderBrowser } from './components/FolderBrowser.tsx';
 import { useOpenShortcut } from './components/ProjectMenu.tsx';
@@ -237,7 +238,7 @@ export function App() {
                 <ChatView />
               ) : (
                 <Suspense fallback={<div className="grid h-full place-items-center"><Spinner /></div>}>
-                  {t.kind === 'flow' ? flowSeen ? <FlowView /> : null : t.kind === 'preview' ? <PreviewView url={t.url} /> : <FileView path={t.path} />}
+                  {t.kind === 'flow' ? flowSeen ? <FlowView /> : null : t.kind === 'preview' ? <PreviewView url={t.url} /> : <FileView path={t.path} diff={t.diff} />}
                 </Suspense>
               )}
             </div>
@@ -257,7 +258,7 @@ export function App() {
         <>
           <Resizer side="right" onDrag={(dx) => setRightW(Math.max(200, Math.min(520, rightW - dx)))} />
           <div style={{ width: rightW }} className="shrink-0 border-l border-line">
-            <Explorer onCollapse={() => setRightOpen(0)} />
+            <RightPanel onCollapse={() => setRightOpen(0)} />
           </div>
         </>
       ) : null}

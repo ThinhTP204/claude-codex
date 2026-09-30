@@ -241,6 +241,50 @@ export type TurnEvent =
   | { t: 'delta'; text: string }
   | { t: 'block'; block: Block };
 
+// ---- git (Source Control) ----
+
+export interface GitFile {
+  path: string;
+  /** rename source */
+  orig?: string;
+  /** staged status: M A D R … (undefined = nothing staged) */
+  index?: string;
+  /** working-tree status: M D U(ntracked) … */
+  work?: string;
+  untracked?: boolean;
+  conflict?: boolean;
+}
+
+export interface GitInfo {
+  isRepo: boolean;
+  branch?: string;
+  detached?: boolean;
+  upstream?: string;
+  ahead: number;
+  behind: number;
+  remotes: string[];
+  files: GitFile[];
+  lastCommit?: { hash: string; subject: string };
+}
+
+export interface GitBranch {
+  name: string;
+  upstream?: string;
+  current: boolean;
+  ahead?: number;
+  behind?: number;
+  gone?: boolean;
+  date?: string;
+}
+
+export interface GitCommit {
+  hash: string;
+  subject: string;
+  author: string;
+  date: string;
+  refs: string[];
+}
+
 /** An interactive shell in the Terminal panel */
 export interface TermInfo {
   id: string;

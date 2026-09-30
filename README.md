@@ -24,6 +24,7 @@ Giao diện gồm ba cột:
 - **Explorer giống VS Code.** Màu git (M/U/D), file bị `.gitignore` hiện mờ, file agent vừa sửa có chấm cam. Mở file bằng Monaco (editor của VS Code), xem diff với HEAD, sửa và lưu bằng ⌘S.
 - **Usage và quota.** Xem % đã dùng theo 5 giờ và theo tuần của cả Claude lẫn Codex, giờ reset, và dùng **lượt reset trong bank của Codex** ngay trong app.
 - **Terminal có sẵn** (giống VS Code): shell thật trong thư mục project, gõ lệnh tay, mở nhiều terminal. Chạy `npm run dev` xong có tab **Preview** xem trang web ngay trong app.
+- **Source Control (git)** giống VS Code: đổi/tạo nhánh, stage, commit, push/pull, xem diff, lịch sử commit, AI viết commit message.
 - **Theme** sáng / tối / theo hệ thống.
 - **Chạy bằng một lệnh.** Trên macOS app mở thành cửa sổ native riêng. Đóng cửa sổ là app tắt.
 
@@ -142,7 +143,19 @@ Số liệu tự làm mới khi mở app, mỗi 5 phút, và sau mỗi lượt c
 - Chạy dev server xong, app tự nhận ra địa chỉ kiểu `http://localhost:3000` và thêm tab **Preview** để xem trang ngay trong app. Bấm link localhost trong terminal cũng mở Preview.
 - **Gửi cho agent:** gửi đoạn anh đang bôi đen (hoặc 60 dòng cuối) vào ô chat, rồi hỏi Claude/Codex vì sao lỗi.
 
-### 6. Làm việc với file
+### 6. Git (Source Control)
+
+Sidebar phải có hai tab: **Explorer** và **Source Control**. Badge trên tab là số file đang thay đổi. Bấm tên nhánh ở Explorer cũng mở tab này.
+
+- **Nhánh:** bấm tên nhánh để đổi nhánh, hoặc gõ tên mới rồi Enter để **tạo nhánh mới** từ nhánh hiện tại. Nhánh chỉ có trên remote thì bấm để kéo về máy. Cạnh tên nhánh có ↑ (commit chưa push) và ↓ (commit mới trên remote).
+- **Stage:** di chuột vào file rồi bấm **+** / **−**, hoặc stage / bỏ stage cả nhóm. Nút ↺ huỷ thay đổi của file (có hỏi lại, không hoàn tác được).
+- **Xem diff:** bấm vào file để mở editor ở chế độ so sánh với HEAD.
+- **Commit:** nhập message rồi bấm **Commit** (⌘Enter). Chưa stage file nào thì app commit **tất cả** thay đổi. Mũi tên cạnh nút có **Commit & Push** (⇧⌘Enter) và **Sửa commit gần nhất** (amend).
+- **Viết bằng AI:** nhờ Claude Haiku (hoặc Codex, theo agent đang chọn ở ô chat) đọc diff và viết commit message. Tốn khoảng 20–30k token.
+- **Push / Pull / Fetch.** Nhánh mới chưa có trên remote thì nút là **Publish nhánh** (tự `push -u`).
+- Push cần git đã đăng nhập remote (SSH key, `gh auth login` hoặc credential manager). Nếu chưa, app báo lỗi rõ ràng thay vì treo chờ mật khẩu.
+
+### 7. Làm việc với file
 
 - Bấm file trong Explorer để mở bằng editor Monaco. **⌘S** để lưu.
 - File đã thay đổi so với git có nút **Diff** để so với HEAD.
@@ -225,6 +238,7 @@ server/                 Node, chạy .ts trực tiếp
   usage.ts              usage 5h/tuần, bank reset của Codex
   projects.ts           cây file, git status, theo dõi thay đổi file
   terminals.ts          terminal tương tác (qua pty_host.py)
+  git.ts                Source Control: status, nhánh, stage, commit, push/pull
   roles.ts              vai trò và pipeline mặc định
 shared/types.ts         kiểu dữ liệu dùng chung server ↔ UI
 ui/                     React + Vite + Tailwind + React Flow + Monaco

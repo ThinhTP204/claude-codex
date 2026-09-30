@@ -32,7 +32,7 @@ interface FileData {
   head?: string | null;
 }
 
-export function FileView({ path }: { path: string }) {
+export function FileView({ path, diff: openInDiff }: { path: string; diff?: boolean }) {
   const project = useStore((s) => s.project);
   const fsVersion = useStore((s) => s.fsVersion);
   const touched = useStore((s) => s.touched[path]);
@@ -40,7 +40,8 @@ export function FileView({ path }: { path: string }) {
   const dark = useIsDark();
   const [data, setData] = useState<FileData>();
   const [value, setValue] = useState('');
-  const [diff, setDiff] = useState(false);
+  const [diff, setDiff] = useState(!!openInDiff);
+  useEffect(() => setDiff(!!openInDiff), [openInDiff]);
   const [saving, setSaving] = useState(false);
   const dirty = !!data && value !== data.content;
   const dirtyRef = useRef(dirty);

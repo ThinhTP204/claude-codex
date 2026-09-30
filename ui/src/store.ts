@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import type { Block, Catalog, Conversation, ConversationSummary, Health, Pipeline, Role, RunConfig, ServerMessage, TermInfo, UsageReport } from '../../shared/types.ts';
+import type { Block, Catalog, Conversation, ConversationSummary, GitInfo, Health, Pipeline, Role, RunConfig, ServerMessage, TermInfo, UsageReport } from '../../shared/types.ts';
 import { disposeTerm, ensureTerm, setLinkHandler, writeTerm } from './terminals.ts';
 import { api, connectWs, qs, TOKEN, URL_PROJECT, wsSend } from './api.ts';
 
@@ -7,7 +7,7 @@ export type Tab =
   | { id: string; kind: 'chat' }
   | { id: string; kind: 'flow' }
   | { id: string; kind: 'preview'; url: string }
-  | { id: string; kind: 'file'; path: string };
+  | { id: string; kind: 'file'; path: string; diff?: boolean };
 
 export interface State {
   project?: string;
@@ -38,6 +38,10 @@ export interface State {
   usageLoading: boolean;
   /** bottom Terminal panel */
   termOpen: boolean;
+  /** Source Control panel */
+  gitInfo?: GitInfo;
+  gitBusy?: string;
+  rightTab: 'files' | 'scm';
   /** in-app folder picker (default on Windows, fallback elsewhere) */
   showFolderBrowser: boolean;
   platform?: string;
@@ -90,6 +94,7 @@ let state: State = {
   usageLoading: false,
   termOpen: LS.get('termOpen', false),
   showFolderBrowser: false,
+  rightTab: LS.get<'files' | 'scm'>('rightTab', 'files'),
   terms: [],
 };
 
@@ -136,8 +141,47 @@ export async function refreshList(): Promise<void> {
 export async function refreshGit(): Promise<void> {
   const project = state.project;
   if (!project) return;
-  const g = await api<State['git']>('GET', `/git/status${qs({ project })}`).catch(() => ({ files: {} }));
-  if (project === state.project) setState({ git: g });
+  const [g, info] = await Promise.all([
+    api<State['git']>('GET', `/git/status${qs({ project })}`).catch(() => ({ files: {} })),
+    api<GitInfo>('GET', `/git/info${qs({ project })}`).catch(() => undefined),
+  ]);
+  if (project === state.project) setState({ git: g, gitInfo: info });
+}
+
+export function setRightTab(tab: 'files' | 'scm'): void {
+  LS.set('rightTab', tab);
+  setState({ rightTab: tab });
+}
+
+const GIT_LABEL: Record<string, string> = {
+  init: 'Đang khởi tạo git…',
+  checkout: 'Đang đổi nhánh…',
+  stage: 'Đang stage…',
+  unstage: 'Đang bỏ stage…',
+  discard: 'Đang huỷ thay đổi…',
+  commit: 'Đang commit…',
+  push: 'Đang push…',
+  pull: 'Đang pull…',
+  fetch: 'Đang fetch…',
+};
+
+/** Run a Source Control action; the server answers with the fresh repo state. */
+export async function gitAction(action: string, body: unknown = {}): Promise<boolean> {
+  const project = state.project;
+  if (!project || state.gitBusy) return false;
+  setState({ gitBusy: GIT_LABEL[action] || action });
+  try {
+    const r = await api<{ info: GitInfo; out?: string }>('POST', `/git/${action}${qs({ project })}`, body);
+    if (project === state.project) setState({ gitInfo: r.info });
+    void refreshGit();
+    return true;
+  } catch (e) {
+    toast((e as Error).message);
+    void refreshGit();
+    return false;
+  } finally {
+    setState({ gitBusy: undefined });
+  }
 }
 
 export async function openProject(path: string): Promise<void> {
@@ -342,10 +386,12 @@ export async function consumeCodexReset(creditId: string): Promise<void> {
   toast(RESET_OUTCOME[r.outcome] || `Kết quả: ${r.outcome}`, r.outcome === 'reset' ? 'info' : 'error');
 }
 
-export function openFile(path: string): void {
+export function openFile(path: string, opts: { diff?: boolean } = {}): void {
   const id = `file:${path}`;
   setState((s) => ({
-    tabs: s.tabs.some((t) => t.id === id) ? s.tabs : [...s.tabs, { id, kind: 'file', path }],
+    tabs: s.tabs.some((t) => t.id === id)
+      ? s.tabs.map((t) => (t.id === id && t.kind === 'file' ? { ...t, diff: opts.diff } : t))
+      : [...s.tabs, { id, kind: 'file', path, diff: opts.diff }],
     activeTab: id,
   }));
 }
@@ -462,5 +508,6 @@ export function boot(): void {
     void refreshHealth();
     void refreshUsage();
     setInterval(() => void refreshUsage(true), 5 * 60_000);
+    window.addEventListener('focus', () => void refreshGit());
   })();
 }

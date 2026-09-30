@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronRight, ChevronsDownUp, File, FileCode2, FileJson, FileText, Folder, FolderOpen, GitBranch, Image, PanelRightClose, RefreshCw, Settings, Lock } from 'lucide-react';
 import type { FsEntry } from '../../../shared/types.ts';
 import { api, qs } from '../api.ts';
-import { openFile, refreshGit, useStore } from '../store.ts';
+import { openFile, refreshGit, setRightTab, useStore } from '../store.ts';
 import { cx } from './ui.tsx';
 
 const EXT_COLOR: Record<string, string> = {
@@ -156,9 +156,14 @@ export function Explorer({ onCollapse }: { onCollapse: () => void }) {
           <div className="flex items-center gap-1.5 px-3 pb-1 text-[11px] font-bold uppercase tracking-wide">
             <span className="truncate">{project.split('/').pop()}</span>
             {git.branch && (
-              <span className="ml-auto inline-flex shrink-0 items-center gap-1 font-normal normal-case text-faint">
+              <button
+                type="button"
+                onClick={() => setRightTab('scm')}
+                title="Mở Source Control"
+                className="ml-auto inline-flex shrink-0 items-center gap-1 rounded px-1 font-normal normal-case text-faint hover:bg-hover hover:text-fg"
+              >
                 <GitBranch size={11} /> {git.branch}
-              </span>
+              </button>
             )}
           </div>
           <div className="px-2 pb-1.5">

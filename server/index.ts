@@ -8,6 +8,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import type { Agent, Pipeline, Role, RunConfig, ServerMessage } from '../shared/types.ts';
 import { getCatalog, getHealth } from './catalog.ts';
 import { consumeCodexReset, getUsage } from './usage.ts';
+import { GitError, gitBranches, gitCheckout, gitCommit, gitDiffForMessage, gitDiscard, gitFetch, gitInfo, gitInit, gitLog, gitPull, gitPush, gitStage, gitUnstage } from './git.ts';
 import { createTerm, killTerm, listTerms, resizeTerm, setTermBroadcast, writeTerm } from './terminals.ts';
 import { startRun } from './runner.ts';
 import {
@@ -61,6 +62,26 @@ async function body<T>(req: http.IncomingMessage): Promise<T> {
   return (s ? JSON.parse(s) : {}) as T;
 }
 
+/** Draft a commit message from the current diff with the cheapest model of the chosen agent. */
+async function suggestCommitMessage(root: string, agent: Agent): Promise<string> {
+  const diff = await gitDiffForMessage(root);
+  if (!diff.trim()) throw new HttpError(400, 'Không có thay đổi nào để viết message');
+  const codexModels = getCatalog().codex;
+  const cfg: RunConfig =
+    agent === 'claude'
+      ? { agent, model: 'haiku', effort: 'low', permission: 'read' }
+      : { agent, model: codexModels.find((m) => m.id === 'gpt-5.5')?.id || codexModels[codexModels.length - 1]?.id || 'gpt-5.5', effort: 'low', permission: 'read' };
+  const prompt =
+    'Write a git commit message for the diff below. Conventional Commits style (feat/fix/refactor/docs/chore…), ' +
+    'subject line under 72 chars, then an optional short bullet list body. Match the language of existing code comments (English is fine). ' +
+    'Reply with ONLY the commit message, no code fences, no explanation.\n\n' +
+    diff;
+  const h = startRun(cfg, prompt, os.tmpdir(), undefined, { onSession() {}, onDelta() {}, onBlock() {} });
+  const r = await h.promise;
+  if (!r.ok) throw new HttpError(500, r.error || 'Không tạo được message');
+  return r.finalText.replace(/^```\w*\n?|\n?```$/g, '').trim();
+}
+
 export function start(opts: StartOptions): Promise<http.Server> {
   const token = opts.token || crypto.randomBytes(24).toString('hex');
   const clients = new Set<WebSocket>();
@@ -109,6 +130,45 @@ export function start(opts: StartOptions): Promise<http.Server> {
       });
       const r = await h.promise;
       return { ok: r.ok && /pong/i.test(r.finalText), text: r.finalText, error: r.error, durationMs: r.durationMs, usage: r.usage };
+    }
+
+    // ---- source control ----
+    if (p.startsWith('/git/') && p !== '/git/status') {
+      const root = project();
+      const b = m === 'POST' ? await body<any>(req) : {};
+      const done = async (out?: unknown) => ({ ok: true, out, info: await gitInfo(root) });
+      try {
+        switch (`${m} ${p}`) {
+          case 'GET /git/info':
+            return gitInfo(root);
+          case 'GET /git/branches':
+            return gitBranches(root);
+          case 'GET /git/log':
+            return gitLog(root, Number(q('limit')) || 30);
+          case 'POST /git/init':
+            return done(await gitInit(root));
+          case 'POST /git/checkout':
+            return done(await gitCheckout(root, b));
+          case 'POST /git/stage':
+            return done(await gitStage(root, b.paths || []));
+          case 'POST /git/unstage':
+            return done(await gitUnstage(root, b.paths || []));
+          case 'POST /git/discard':
+            return done(await gitDiscard(root, b.paths || []));
+          case 'POST /git/commit':
+            return done(await gitCommit(root, b));
+          case 'POST /git/push':
+            return done(await gitPush(root));
+          case 'POST /git/pull':
+            return done(await gitPull(root));
+          case 'POST /git/fetch':
+            return done(await gitFetch(root));
+          case 'POST /git/suggest-message':
+            return { message: await suggestCommitMessage(root, b.agent === 'codex' ? 'codex' : 'claude') };
+        }
+      } catch (e) {
+        throw new HttpError(e instanceof GitError ? 400 : 500, (e as Error).message);
+      }
     }
 
     // ---- terminals (keystrokes and resizes go over the websocket) ----
