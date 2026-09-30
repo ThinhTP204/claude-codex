@@ -55,6 +55,16 @@ jobs:
         with:
           path: dist-release
           merge-multiple: true
+      # copies without the version in the name, so the site can link to
+      # releases/latest/download/AgentDesk-mac-arm64.dmg and always get the newest build
+      - name: Stable file names
+        run: |
+          cd dist-release
+          for f in *; do
+            s=$(echo "$f" | sed -E 's/-[0-9]+\.[0-9]+\.[0-9]+//')
+            [ "$s" != "$f" ] && cp "$f" "$s"
+          done
+          ls -la
       - uses: softprops/action-gh-release@v2
         with:
           files: dist-release/*

@@ -4,6 +4,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+**Tải bản cài cho macOS / Windows:** https://thinhtp204.github.io/claude-codex/
+
 App chạy local để **giao việc cho Claude Code và Codex trong cùng một chỗ**. Ví dụ: Claude Opus lập plan, Codex review, Claude Sonnet viết code. Lúc nào cũng thấy rõ bước nào đang dùng model gì của hãng nào, tốn bao nhiêu token, và còn bao nhiêu quota.
 
 > *A local desktop-style app that orchestrates the Claude Code CLI and the Codex CLI: chat with either agent, hand work from one to the other, and run approval-gated multi-agent pipelines (plan → review → code → test) in an n8n-style flow editor.*

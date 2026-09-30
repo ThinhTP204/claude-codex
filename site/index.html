@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AgentDesk · Giao việc cho Claude, Codex và Antigravity</title>
+  <meta name="description" content="AgentDesk là app desktop chạy local để giao việc cho Claude Code, Codex và Antigravity CLI trong một cửa sổ: chat, pipeline Plan → Review → Code → Test, Git, Terminal, Problems." />
+  <meta property="og:title" content="AgentDesk" />
+  <meta property="og:description" content="Giao việc cho Claude, Codex và Antigravity trong một cửa sổ. Miễn phí, mã nguồn mở." />
+  <link rel="icon" href="logo.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #151413;
+      --bg2: #1c1b19;
+      --panel: #211f1d;
+      --raised: #282624;
+      --line: #34312d;
+      --line2: #45413b;
+      --fg: #f1ede6;
+      --muted: #aaa396;
+      --faint: #756f65;
+      --accent: #d97757;
+      --accent2: #e8906f;
+      --codex: #10a37f;
+      --warn: #d9a441;
+      --err: #e0625a;
+      --radius: 14px;
+      --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 16px/1.65 'Be Vietnam Pro', -apple-system, 'Segoe UI', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+    a { color: inherit; text-decoration: none; }
+    .wrap { width: min(1160px, 100% - 40px); margin: 0 auto; }
+
+    /* nav */
+    nav { position: sticky; top: 0; z-index: 20; backdrop-filter: saturate(140%) blur(12px); background: color-mix(in srgb, var(--bg) 78%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+    nav .wrap { display: flex; align-items: center; gap: 28px; height: 62px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -0.01em; }
+    .brand img { width: 28px; height: 28px; }
+    nav .links { display: flex; gap: 22px; margin-left: auto; font-size: 14.5px; color: var(--muted); }
+    nav .links a:hover { color: var(--fg); }
+    .btn-sm { padding: 7px 14px; border-radius: 10px; border: 1px solid var(--line2); font-size: 14px; color: var(--fg); }
+    .btn-sm:hover { border-color: var(--muted); }
+
+    /* hero */
+    header { position: relative; padding: 84px 0 40px; text-align: center; }
+    header::before {
+      content: ''; position: absolute; inset: -120px 0 auto; height: 620px; z-index: -1; pointer-events: none;
+      background: radial-gradient(520px 260px at 38% 30%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%),
+                  radial-gradient(460px 240px at 64% 36%, color-mix(in srgb, var(--codex) 16%, transparent), transparent 70%);
+    }
+    .pill { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line2); background: var(--bg2); font-size: 13px; color: var(--muted); }
+    .pill b { color: var(--fg); font-weight: 600; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--codex); box-shadow: 0 0 0 3px color-mix(in srgb, var(--codex) 25%, transparent); }
+    h1 { font-size: clamp(36px, 6vw, 64px); line-height: 1.08; letter-spacing: -0.035em; margin: 22px auto 18px; max-width: 900px; font-weight: 700; text-wrap: balance; }
+    h1 .c { color: var(--accent); }
+    h1 .x { color: var(--codex); }
+    .lead { font-size: clamp(16px, 2vw, 19px); color: var(--muted); max-width: 680px; margin: 0 auto; text-wrap: pretty; }
+
+    .downloads { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin: 34px 0 12px; }
+    .dl {
+      display: flex; align-items: center; gap: 14px; min-width: 280px; padding: 14px 20px; border-radius: var(--radius);
+      border: 1px solid var(--line2); background: var(--panel); text-align: left; transition: transform .15s, border-color .15s, background .15s;
+    }
+    .dl:hover { transform: translateY(-2px); border-color: var(--muted); }
+    .dl.primary { background: var(--accent); border-color: var(--accent); color: #1a0f0a; }
+    .dl.primary:hover { background: var(--accent2); }
+    .dl svg { width: 30px; height: 30px; flex: none; }
+    .dl .t { font-weight: 600; font-size: 16px; line-height: 1.25; }
+    .dl .s { font-size: 12.5px; opacity: .72; }
+    .alt { font-size: 13.5px; color: var(--faint); }
+    .alt a { color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+    .alt a:hover { color: var(--fg); }
+
+    /* app mock */
+    .mock { margin: 54px auto 0; max-width: 1100px; border-radius: 16px; border: 1px solid var(--line2); background: var(--bg2); box-shadow: 0 40px 120px -30px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.02) inset; overflow: hidden; text-align: left; }
+    .mock-bar { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
+    .mock-bar i { width: 11px; height: 11px; border-radius: 50%; background: #ff5f57; }
+    .mock-bar i:nth-child(2) { background: #febc2e; }
+    .mock-bar i:nth-child(3) { background: #28c840; }
+    .mock-bar span { margin-left: 10px; font-size: 12.5px; color: var(--faint); }
+    .mock-body { display: grid; grid-template-columns: 210px 1fr 220px; min-height: 440px; font-size: 12.5px; }
+    .m-side { border-right: 1px solid var(--line); padding: 14px 12px; background: var(--bg2); }
+    .m-proj { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin-bottom: 12px; }
+    .m-proj small { display: block; font-size: 10px; letter-spacing: .08em; color: var(--faint); }
+    .m-item { padding: 6px 8px; border-radius: 8px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .m-item.on { background: var(--raised); color: var(--fg); }
+    .m-item .a { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; background: var(--accent); }
+    .m-item .a.cx { background: var(--codex); }
+    .m-main { display: flex; flex-direction: column; min-width: 0; }
+    .m-run { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-bottom: 1px solid var(--line); color: var(--muted); white-space: nowrap; overflow: hidden; }
+    .step { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px 2px 3px; border-radius: 999px; }
+    .step b { width: 15px; height: 15px; border-radius: 50%; display: grid; place-items: center; font-size: 9px; color: #fff; }
+    .step.ok b { background: var(--codex); }
+    .step.wait { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--fg); box-shadow: 0 0 0 1px color-mix(in srgb, var(--warn) 40%, transparent); }
+    .step.wait b { background: var(--warn); }
+    .step.idle b { border: 1.5px solid var(--line2); }
+    .conn { width: 18px; height: 1px; background: var(--line2); }
+    .conn.ok { background: color-mix(in srgb, var(--codex) 60%, transparent); }
+    .badge { font-size: 10.5px; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); font-weight: 600; }
+    .m-chat { flex: 1; padding: 18px 22px; display: flex; flex-direction: column; gap: 14px; overflow: hidden; }
+    .bubble { align-self: flex-end; max-width: 75%; background: var(--raised); padding: 9px 13px; border-radius: 14px; }
+    .turn .who { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .turn .who b { color: var(--fg); }
+    .chip { font-size: 10.5px; padding: 1px 7px; border: 1px solid var(--line2); border-radius: 999px; }
+    .turn p { margin: 0; color: #d9d4cb; }
+    .tool { font-family: var(--mono); font-size: 11px; color: var(--faint); margin: 3px 0; }
+    .verdict { border: 1px solid color-mix(in srgb, var(--err) 45%, transparent); background: color-mix(in srgb, var(--err) 7%, transparent); border-radius: 10px; padding: 8px 11px; font-size: 12px; color: var(--muted); }
+    .verdict b { color: var(--err); }
+    .m-compose { margin: 0 16px 16px; border: 1px solid var(--line2); border-radius: 14px; padding: 11px 13px; color: var(--faint); background: var(--panel); }
+    .m-compose .row { display: flex; gap: 8px; margin-top: 10px; align-items: center; font-size: 11.5px; color: var(--muted); }
+    .seg { display: inline-flex; background: var(--raised); border-radius: 8px; padding: 2px; }
+    .seg span { padding: 2px 8px; border-radius: 6px; }
+    .seg span.on { background: var(--bg2); color: var(--fg); }
+    .send { margin-left: auto; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); }
+    .m-files { border-left: 1px solid var(--line); padding: 12px 10px; font-family: var(--mono); font-size: 11.5px; color: var(--muted); background: var(--bg2); }
+    .m-files .h { font-family: inherit; font-size: 10px; letter-spacing: .1em; color: var(--faint); margin-bottom: 8px; }
+    .f { padding: 3px 6px; white-space: nowrap; }
+    .f.mod { color: #e2c08d; }
+    .f.new { color: #73c991; }
+    .f.bad { color: var(--err); }
+    .f em { float: right; font-style: normal; font-size: 10.5px; }
+
+    /* sections */
+    section { padding: 96px 0 0; }
+    .eyebrow { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+    h2 { text-wrap: balance; font-size: clamp(28px, 4vw, 40px); letter-spacing: -0.025em; line-height: 1.15; margin: 10px 0 14px; }
+    .sub { color: var(--muted); max-width: 640px; margin: 0; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; margin-top: 40px; }
+    .card { border: 1px solid var(--line); background: linear-gradient(180deg, var(--panel), var(--bg2)); border-radius: var(--radius); padding: 22px; transition: border-color .2s; }
+    .card:hover { border-color: var(--line2); }
+    .ico { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); margin-bottom: 14px; }
+    .ico.g { background: color-mix(in srgb, var(--codex) 14%, transparent); color: var(--codex); }
+    .ico svg { width: 20px; height: 20px; }
+    .card h3 { margin: 0 0 6px; font-size: 17px; letter-spacing: -0.01em; }
+    .card p { margin: 0; font-size: 14.5px; color: var(--muted); }
+
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 40px; counter-reset: s; }
+    .stp { position: relative; padding: 24px 22px 22px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--bg2); }
+    .stp::before { counter-increment: s; content: counter(s); position: absolute; top: -14px; left: 20px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: #1a0f0a; font-weight: 700; font-size: 14px; }
+    .stp h3 { margin: 4px 0 6px; font-size: 16.5px; }
+    .stp p { margin: 0; color: var(--muted); font-size: 14.5px; }
+    code { font-family: var(--mono); font-size: .88em; background: var(--raised); border: 1px solid var(--line); padding: 1px 6px; border-radius: 6px; color: #e9dfd2; }
+
+    .note { margin-top: 40px; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+    .note .card h3 { display: flex; align-items: center; gap: 8px; }
+
+    .cta { margin: 110px 0 0; padding: 56px 24px; border-radius: 22px; text-align: center; border: 1px solid var(--line); background:
+      radial-gradient(400px 200px at 30% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%),
+      radial-gradient(400px 200px at 70% 100%, color-mix(in srgb, var(--codex) 14%, transparent), transparent 70%), var(--bg2); }
+    .cta h2 { margin-top: 0; }
+
+    footer { margin-top: 90px; padding: 30px 0 44px; border-top: 1px solid var(--line); color: var(--faint); font-size: 14px; }
+    footer .wrap { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: center; }
+    footer .brand { color: var(--muted); font-weight: 600; }
+    footer a:hover { color: var(--fg); }
+
+    @media (max-width: 900px) {
+      .mock-body { grid-template-columns: 1fr; }
+      .m-side, .m-files { display: none; }
+      nav .links a:not(.btn-sm) { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="wrap">
+      <a class="brand" href="#"><img src="logo.svg" alt="" />AgentDesk</a>
+      <div class="links">
+        <a href="#features">Tính năng</a>
+        <a href="#how">Cách dùng</a>
+        <a href="#faq">Lưu ý</a>
+        <a class="btn-sm" href="https://github.com/ThinhTP204/claude-codex" target="_blank" rel="noopener">GitHub ↗</a>
+      </div>
+    </div>
+  </nav>
+
+  <header>
+    <div class="wrap">
+      <span class="pill"><span class="dot"></span><b id="ver">Miễn phí · mã nguồn mở</b> · chạy hoàn toàn trên máy bạn</span>
+      <h1>Giao việc cho <span class="c">Claude</span>, <span class="x">Codex</span> và Antigravity trong một cửa sổ.</h1>
+      <p class="lead">Opus lập kế hoạch, Codex review, Sonnet viết code, luôn thấy rõ bước nào đang dùng model gì, tốn bao nhiêu token và còn bao nhiêu quota.</p>
+
+      <div class="downloads" id="download">
+        <a class="dl primary" id="dl-mac" href="https://github.com/ThinhTP204/claude-codex/releases/latest/download/AgentDesk-mac-arm64.dmg">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.37 12.6c-.02-2.2 1.8-3.26 1.88-3.31-1.02-1.5-2.62-1.7-3.19-1.72-1.36-.14-2.65.8-3.34.8-.69 0-1.75-.78-2.88-.76-1.48.02-2.85.86-3.61 2.19-1.54 2.67-.39 6.62 1.11 8.79.73 1.06 1.6 2.25 2.74 2.21 1.1-.04 1.51-.71 2.84-.71 1.32 0 1.7.71 2.86.69 1.18-.02 1.93-1.08 2.65-2.14.84-1.23 1.18-2.42 1.2-2.48-.03-.01-2.3-.88-2.32-3.49zM14.2 6.13c.6-.73 1.01-1.75.9-2.76-.87.04-1.92.58-2.54 1.3-.56.64-1.05 1.67-.92 2.66.97.08 1.96-.49 2.56-1.2z"/></svg>
+          <span><span class="t">Tải cho macOS</span><br /><span class="s">Apple Silicon · .dmg</span></span>
+        </a>
+        <a class="dl" id="dl-win" href="https://github.com/ThinhTP204/claude-codex/releases/latest/download/AgentDesk-win-x64-setup.exe">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.1 10.4 4v7.1H3V5.1zm8.3-1.2L21 2.5v8.6h-9.7V3.9zM3 12.9h7.4V20L3 18.9v-6zm8.3 0H21v8.6l-9.7-1.4v-7.2z"/></svg>
+          <span><span class="t">Tải cho Windows</span><br /><span class="s">Windows 10/11 · bộ cài .exe</span></span>
+        </a>
+      </div>
+      <p class="alt">
+        Windows không muốn cài? <a href="https://github.com/ThinhTP204/claude-codex/releases/latest/download/AgentDesk-win-x64.zip">bản .zip</a> ·
+        <a href="https://github.com/ThinhTP204/claude-codex/releases" target="_blank" rel="noopener">tất cả phiên bản</a> ·
+        <a href="https://github.com/ThinhTP204/claude-codex#chạy" target="_blank" rel="noopener">chạy từ mã nguồn</a>
+      </p>
+
+      <div class="mock" aria-hidden="true">
+        <div class="mock-bar"><i></i><i></i><i></i><span>AgentDesk · Lập kế hoạch đăng nhập bằng OTP</span></div>
+        <div class="mock-body">
+          <div class="m-side">
+            <div class="m-proj"><small>PROJECT</small>brainstorm-project</div>
+            <div class="m-item on"><span class="a"></span>Lập kế hoạch đăng nhập OTP</div>
+            <div class="m-item"><span class="a cx"></span>Review luồng thanh toán</div>
+            <div class="m-item"><span class="a"></span>Sửa lỗi hydration Next.js</div>
+            <div class="m-item"><span class="a cx"></span>Viết test cho API upload</div>
+          </div>
+          <div class="m-main">
+            <div class="m-run">
+              <span>Plan → Review → Code → Test</span><span class="badge">Chờ duyệt</span>
+              <span class="step ok"><b>✓</b>Plan</span><span class="conn ok"></span>
+              <span class="step wait"><b>❚❚</b>Review · GPT‑6‑Sol</span><span class="conn"></span>
+              <span class="step idle"><b></b>Code</span><span class="conn"></span>
+              <span class="step idle"><b></b>Test</span>
+            </div>
+            <div class="m-chat">
+              <div class="bubble">Thêm đăng nhập bằng mã OTP, mã hết hạn sau 30 ngày.</div>
+              <div class="turn">
+                <div class="who"><b>Claude</b> · Opus 5.5 · High <span class="chip">🧭 Plan</span></div>
+                <div class="tool">▸ Read src/auth/service.py · ▸ Grep "active_session_id"</div>
+                <p>Kế hoạch 6 bước: model OTP, API cấp và thu hồi mã, cookie hết hạn theo token, test gia hạn…</p>
+              </div>
+              <div class="turn">
+                <div class="who"><b>Codex</b> · GPT‑6‑Sol · XHigh <span class="chip">🔍 Review</span></div>
+                <div class="verdict"><b>Review: CHƯA ĐẠT</b> → cần sửa: xoá cookie host-only, cookie hết hạn phải fail-closed, thêm test token hết hạn.</div>
+              </div>
+            </div>
+            <div class="m-compose">Giao việc cho agent… (gõ / để xem lệnh &amp; skill)
+              <div class="row"><span class="seg"><span class="on">Claude</span><span>Codex</span></span>Sonnet 5.5 · Medium · Sửa file<span class="send"></span></div>
+            </div>
+          </div>
+          <div class="m-files">
+            <div class="h">EXPLORER</div>
+            <div class="f">▾ brainstorm-client <em>⎇ dev</em></div>
+            <div class="f">&nbsp;&nbsp;▸ app</div>
+            <div class="f bad">&nbsp;&nbsp;▾ components <em>●</em></div>
+            <div class="f bad">&nbsp;&nbsp;&nbsp;&nbsp;carousel.tsx <em>1</em></div>
+            <div class="f mod">&nbsp;&nbsp;&nbsp;&nbsp;login-form.tsx <em>M</em></div>
+            <div class="f new">&nbsp;&nbsp;&nbsp;&nbsp;otp-input.tsx <em>U</em></div>
+            <div class="f">&nbsp;&nbsp;▸ lib</div>
+            <div class="f">▾ brainstormer <em>⎇ dev</em></div>
+            <div class="f mod">&nbsp;&nbsp;auth_service.py <em>M</em></div>
+            <div class="f">&nbsp;&nbsp;README.md</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="eyebrow">Tính năng</div>
+      <h2>Một chỗ để điều phối nhiều agent</h2>
+      <p class="sub">Giao diện giống Claude ở giữa, file và Git giống VS Code bên phải. Mọi thứ chạy trên máy bạn, bằng chính các CLI bạn đã đăng nhập.</p>
+      <div class="grid">
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><h3>Chat với nhiều agent</h3><p>Đổi qua lại Claude, Codex, Antigravity giữa cuộc trò chuyện; agent sau tự biết agent trước đã làm gì.</p></div>
+        <div class="card"><div class="ico g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M9 6h4a2 2 0 0 1 2 2v7"/></svg></div><h3>Pipeline Plan → Review → Code → Test</h3><p>Sơ đồ kéo thả kiểu n8n, dừng chờ duyệt, Review chấm ĐẠT hoặc CHƯA ĐẠT rồi tự gửi góp ý lại cho bước trước.</p></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10M18 20V4M6 20v-4"/></svg></div><h3>Usage 5 giờ và tuần</h3><p>Xem quota còn lại của Claude, Codex, Antigravity; bấm dùng lượt reset của Codex ngay trong app.</p></div>
+        <div class="card"><div class="ico g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 8v8M18 10c0 4-6 3-12 6"/></svg></div><h3>Git và nhiều repo</h3><p>Mở một thư mục cha là tự tìm các repo con; commit, đổi nhánh, push, viết commit message bằng AI.</p></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg></div><h3>Báo lỗi code</h3><p>Chạy TypeScript, ESLint, Biome, Ruff của project; tô đỏ file lỗi, gạch chân trong editor, một nút gửi cho agent sửa.</p></div>
+        <div class="card"><div class="ico g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6M12 19h8"/></svg></div><h3>Terminal và Preview</h3><p>Terminal ngay trong app, chạy <code>npm run dev</code> là tự mở tab Preview để xem trang đang làm.</p></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3 5 21M15 3l-4 18"/></svg></div><h3>Gõ / để dùng lệnh và skill</h3><p>Hiện skill và lệnh cài trong project của từng CLI, chọn là dùng, không cần nhớ tên.</p></div>
+        <div class="card"><div class="ico g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 12-8.5 8.5a6 6 0 0 1-8.5-8.5L12.5 3.5a4 4 0 0 1 5.7 5.7L9.6 17.8a2 2 0 0 1-2.8-2.8L15 7"/></svg></div><h3>Kéo thả file, dán ảnh</h3><p>Đính kèm file và ảnh chụp màn hình vào chat; bấm tên file trong câu trả lời là mở đúng dòng.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="wrap">
+      <div class="eyebrow">Bắt đầu</div>
+      <h2>Ba bước là dùng được</h2>
+      <p class="sub">AgentDesk không chứa model nào, nó điều khiển các CLI chính chủ trên máy bạn, dùng đúng tài khoản và quota của bạn.</p>
+      <div class="steps">
+        <div class="stp"><h3>Cài CLI bạn muốn dùng</h3><p><code>npm i -g @anthropic-ai/claude-code</code> rồi <code>claude</code> để đăng nhập. Codex: <code>npm i -g @openai/codex</code>, <code>codex login</code>. Cài một CLI cũng được.</p></div>
+        <div class="stp"><h3>Tải và cài AgentDesk</h3><p>macOS: mở file .dmg, kéo vào Applications. Windows: chạy file cài, không cần quyền admin. Node đã có sẵn bên trong.</p></div>
+        <div class="stp"><h3>Chọn project và giao việc</h3><p>Mở thư mục code, chọn agent và model, gõ yêu cầu. Hoặc chạy cả pipeline và duyệt từng bước.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <div class="eyebrow">Lưu ý</div>
+      <h2>Lần đầu mở app</h2>
+      <p class="sub">App chưa ký bằng chứng chỉ trả phí nên hệ điều hành sẽ hỏi lại một lần.</p>
+      <div class="note">
+        <div class="card"><h3>macOS</h3><p>Nếu báo không mở được: vào <b>System Settings → Privacy &amp; Security</b>, bấm <b>Open Anyway</b>. Hoặc chạy <code>xattr -dr com.apple.quarantine /Applications/AgentDesk.app</code>.</p></div>
+        <div class="card"><h3>Windows</h3><p>SmartScreen hiện "Windows protected your PC": bấm <b>More info → Run anyway</b>. Cửa sổ app mở bằng Microsoft Edge ở chế độ ứng dụng.</p></div>
+        <div class="card"><h3>Dữ liệu ở đâu?</h3><p>Chỉ trên máy bạn, trong <code>~/.agentdesk</code>. App không gửi code hay cuộc trò chuyện đi đâu ngoài các CLI bạn chọn.</p></div>
+        <div class="card"><h3>Cập nhật</h3><p>Có bản mới, mục <b>Cập nhật</b> ở cuối sidebar chuyển màu cam; bấm để tải và cài đè, dữ liệu giữ nguyên.</p></div>
+      </div>
+
+      <div class="cta">
+        <h2>Thử AgentDesk ngay</h2>
+        <p class="sub" style="margin: 0 auto 26px">Miễn phí, mã nguồn mở theo giấy phép MIT.</p>
+        <div class="downloads" style="margin: 0">
+          <a class="dl primary" href="https://github.com/ThinhTP204/claude-codex/releases/latest/download/AgentDesk-mac-arm64.dmg"><span><span class="t">macOS · .dmg</span><br /><span class="s">Apple Silicon</span></span></a>
+          <a class="dl" href="https://github.com/ThinhTP204/claude-codex/releases/latest/download/AgentDesk-win-x64-setup.exe"><span><span class="t">Windows · .exe</span><br /><span class="s">Windows 10/11</span></span></a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <span class="brand"><img src="logo.svg" alt="" width="20" height="20" style="vertical-align: -4px; margin-right: 6px" />AgentDesk</span>
+      <span>© 2026 ThinhTP204 · Giấy phép MIT</span>
+      <a href="https://github.com/ThinhTP204/claude-codex" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/ThinhTP204/claude-codex/releases" target="_blank" rel="noopener">Releases</a>
+      <span style="margin-left: auto">Claude, Codex, Antigravity là thương hiệu của Anthropic, OpenAI, Google. AgentDesk không liên kết với các hãng này.</span>
+    </div>
+  </footer>
+
+  <script>
+    // Put the visitor's OS first and show the latest version (links work without this too)
+    (function () {
+      var ua = navigator.userAgent || '';
+      var isWin = /Windows/i.test(ua);
+      if (isWin) {
+        var mac = document.getElementById('dl-mac'), win = document.getElementById('dl-win');
+        mac.classList.remove('primary');
+        win.classList.add('primary');
+        win.parentNode.insertBefore(win, mac);
+      }
+      fetch('https://api.github.com/repos/ThinhTP204/claude-codex/releases/latest')
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (rel) {
+          if (rel && rel.tag_name) document.getElementById('ver').textContent = 'Phiên bản ' + rel.tag_name.replace(/^v/, '') + ' · miễn phí';
+        })
+        .catch(function () {});
+    })();
+  </script>
+</body>
+</html>
