@@ -1,7 +1,9 @@
 // Types shared by the server (run natively by Node with type stripping) and the UI.
-// Keep this file erasable-only: no enums, no namespaces, no runtime code.
+// Keep this file erasable-only (Node runs it with type stripping): no enums or namespaces.
 
-export type Agent = 'claude' | 'codex';
+export type Agent = 'claude' | 'codex' | 'antigravity';
+
+export const AGENTS: Agent[] = ['claude', 'codex', 'antigravity'];
 
 /** read = chỉ đọc, write = sửa file, exec = sửa file + chạy lệnh, full = bỏ qua mọi quyền */
 export type Permission = 'read' | 'write' | 'exec' | 'full';
@@ -141,7 +143,7 @@ export interface Conversation {
   /** native CLI session ids so each provider resumes its own context */
   sessions: Partial<Record<Agent, string>>;
   /** number of turns each provider has already seen (for cross-agent context hand-off) */
-  seen: Record<Agent, number>;
+  seen: Partial<Record<Agent, number>>;
   turns: Turn[];
   run?: PipelineRun;
   /** where the conversation came from */
@@ -173,6 +175,7 @@ export interface ModelInfo {
 export interface Catalog {
   claude: ModelInfo[];
   codex: ModelInfo[];
+  antigravity: ModelInfo[];
 }
 
 export interface AgentHealth {
@@ -186,6 +189,7 @@ export interface AgentHealth {
 export interface Health {
   claude: AgentHealth;
   codex: AgentHealth;
+  antigravity: AgentHealth;
   checkedAt: number;
 }
 
@@ -234,6 +238,8 @@ export interface AgentUsage {
 export interface UsageReport {
   claude: AgentUsage;
   codex: AgentUsage;
+  /** only when the `agy` CLI is installed */
+  antigravity?: AgentUsage;
 }
 
 /** Streaming events sent over the websocket */

@@ -2,8 +2,8 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
-import type { AgentUsage, ResetCredit, UsageWindow } from '../shared/types.ts';
-import { run } from './catalog.ts';
+import type { AgentUsage, ResetCredit, UsageReport, UsageWindow } from '../shared/types.ts';
+import { getHealth, run } from './catalog.ts';
 import { resolveCommand } from './platform.ts';
 
 // ---------------- Claude: `claude -p /usage` (local command, no model call, 0 tokens) ----------------
@@ -122,13 +122,42 @@ async function codexUsage(): Promise<AgentUsage> {
   }
 }
 
+// ---------------- Antigravity: `agy -p /usage` (free, no model call) ----------------
+// Output rows: "<pool>\t<window> Limit Remaining\t<pct>%\t<ISO reset time>", pct = what is LEFT.
+
+const AGY_POOLS: [RegExp, string][] = [
+  [/^gemini models$/i, 'Gemini'],
+  [/^claude and gpt models$/i, 'Claude/GPT'],
+];
+
+async function agyUsage(): Promise<AgentUsage> {
+  const r = await run('agy', ['-p', '/usage'], 30_000, os.tmpdir());
+  const windows: UsageWindow[] = [];
+  for (const raw of r.stdout.split('\n')) {
+    const line = raw.trim();
+    const cells = line.includes('\t') ? line.split(/\t+/) : line.split(/\s{2,}/);
+    if (cells.length < 4) continue;
+    const pool = AGY_POOLS.find(([re]) => re.test(cells[0].trim()))?.[1];
+    const left = Number(String(cells[2]).replace('%', '').trim());
+    if (!pool || !Number.isFinite(left)) continue;
+    const span = /weekly/i.test(cells[1]) ? 'Tuần' : /five hour/i.test(cells[1]) ? '5 giờ' : null;
+    if (!span) continue;
+    const at = Date.parse(cells[3].trim());
+    windows.push({ label: `${pool} · ${span}`, usedPercent: Math.max(0, Math.min(100, 100 - left)), resetsAt: Number.isFinite(at) ? at : undefined });
+  }
+  if (!windows.length) return { ok: false, error: (r.stderr || r.stdout).trim().slice(0, 300) || 'Không đọc được /usage của agy', windows, fetchedAt: Date.now() };
+  // 5h before weekly, Gemini before Claude/GPT
+  windows.sort((a, b) => a.label.localeCompare(b.label));
+  return { ok: true, windows, fetchedAt: Date.now() };
+}
+
 // ---------------- cache + public API ----------------
 
-const cache: { claude?: AgentUsage; codex?: AgentUsage } = {};
-const inflight: { claude?: Promise<AgentUsage>; codex?: Promise<AgentUsage> } = {};
+const cache: { claude?: AgentUsage; codex?: AgentUsage; antigravity?: AgentUsage } = {};
+const inflight: { claude?: Promise<AgentUsage>; codex?: Promise<AgentUsage>; antigravity?: Promise<AgentUsage> } = {};
 const TTL = 60_000;
 
-function cached(key: 'claude' | 'codex', fn: () => Promise<AgentUsage>, force: boolean): Promise<AgentUsage> {
+function cached(key: 'claude' | 'codex' | 'antigravity', fn: () => Promise<AgentUsage>, force: boolean): Promise<AgentUsage> {
   const hit = cache[key];
   if (!force && hit && Date.now() - hit.fetchedAt < TTL) return Promise.resolve(hit);
   inflight[key] ??= fn()
@@ -141,9 +170,14 @@ function cached(key: 'claude' | 'codex', fn: () => Promise<AgentUsage>, force: b
   return inflight[key]!;
 }
 
-export async function getUsage(force = false): Promise<{ claude: AgentUsage; codex: AgentUsage }> {
-  const [claude, codex] = await Promise.all([cached('claude', claudeUsage, force), cached('codex', codexUsage, force)]);
-  return { claude, codex };
+export async function getUsage(force = false): Promise<UsageReport> {
+  const agyInstalled = (await getHealth()).antigravity.installed;
+  const [claude, codex, antigravity] = await Promise.all([
+    cached('claude', claudeUsage, force),
+    cached('codex', codexUsage, force),
+    agyInstalled ? cached('antigravity', agyUsage, force) : Promise.resolve(undefined),
+  ]);
+  return { claude, codex, antigravity };
 }
 
 export async function consumeCodexReset(creditId?: string): Promise<{ outcome: string; codex: AgentUsage }> {

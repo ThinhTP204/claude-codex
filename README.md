@@ -38,7 +38,9 @@ Giao diện gồm ba cột:
 | macOS (khuyến nghị) | Có Xcode Command Line Tools (`xcode-select --install`) thì app mở thành cửa sổ native |
 | Python 3 (macOS/Linux) | Dùng cho Terminal (tạo PTY, không cần cài module native). macOS đã có sẵn |
 
-Chỉ cần một trong hai CLI là dùng được. Nếu có cả hai thì mới giao việc qua lại được.
+Chỉ cần một CLI là dùng được. Có từ hai CLI trở lên thì mới giao việc qua lại được.
+
+**Tuỳ chọn: Antigravity CLI (`agy`) của Google.** Cài theo [hướng dẫn chính thức](https://antigravity.google/docs/cli/headless/) (`curl -fsSL https://antigravity.google/cli/install.sh | bash`), rồi chạy `agy` một lần để đăng nhập Google. Khi máy có `agy`, AgentDesk tự thêm **Antigravity** làm agent thứ ba: chat, pipeline, usage (Gemini và Claude/GPT, mỗi nhóm có quota 5 giờ và tuần). Không cài thì app ẩn đi.
 
 Không có Xcode Command Line Tools thì app mở bằng Chrome/Edge/Brave ở chế độ `--app` (cửa sổ riêng, không thanh địa chỉ). Không có các trình duyệt đó thì mở bằng trình duyệt mặc định.
 
@@ -185,6 +187,8 @@ Sidebar phải có hai tab: **Explorer** và **Source Control**. Badge trên tab
 | **Sửa file** | `acceptEdits`, chặn Bash | `workspace-write` |
 | **Sửa + chạy lệnh** | `acceptEdits` + Bash | `workspace-write` |
 | **Toàn quyền** | `--dangerously-skip-permissions` | `--dangerously-bypass-approvals-and-sandbox` |
+
+Antigravity (`agy`): **Chỉ đọc** không tự duyệt tool. **Sửa file / Sửa + chạy lệnh** dùng `--dangerously-skip-permissions --sandbox`. **Toàn quyền** dùng `--dangerously-skip-permissions`, không kèm sandbox.
 
 App chạy CLI ở chế độ không tương tác, nên không có bước hỏi quyền giữa chừng. Hãy chọn mức quyền phù hợp **trước khi** gửi. Bước plan và review nên để **Chỉ đọc**.
 

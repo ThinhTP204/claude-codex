@@ -15,6 +15,9 @@ export function ConfigPicker({
   compact?: boolean;
 }) {
   const catalog = useStore((s) => s.catalog);
+  const health = useStore((s) => s.health);
+  // Claude & Codex are always offered (their errors are self-explanatory); Antigravity only when installed
+  const agents = (['claude', 'codex', 'antigravity'] as Agent[]).filter((a) => a !== 'antigravity' || health?.antigravity?.installed || value.agent === a);
   const models = catalog?.[value.agent] || [];
   const model = models.find((m) => m.id === value.model);
   const efforts = model?.efforts || [];
@@ -34,7 +37,7 @@ export function ConfigPicker({
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-0.5">
       <div className="mr-1 inline-flex rounded-lg bg-hover/70 p-0.5">
-        {(['claude', 'codex'] as Agent[]).map((a) => (
+        {agents.map((a) => (
           <button
             key={a}
             type="button"
@@ -58,7 +61,7 @@ export function ConfigPicker({
         onChange={setModel}
         width={300}
         options={models.map((m) => ({ value: m.id, label: m.label, hint: m.description?.slice(0, 80) }))}
-        display={<span className="truncate font-medium text-fg">{model?.label || value.model || 'Chọn model'}</span>}
+        display={<span className="truncate font-medium text-fg">{model?.label || value.model || (value.agent === 'antigravity' ? 'Mặc định' : 'Chọn model')}</span>}
       />
 
       {efforts.length > 0 && (
@@ -119,8 +122,8 @@ function Advanced({ value, onChange, fastAvailable }: { value: RunConfig; onChan
   const isClaude = value.agent === 'claude';
   return (
     <div className="space-y-3 p-2.5">
-      <div className="text-xs font-semibold uppercase tracking-wide text-faint">Tuỳ chọn {isClaude ? 'Claude' : 'Codex'}</div>
-      {!isClaude && (
+      <div className="text-xs font-semibold uppercase tracking-wide text-faint">Tuỳ chọn {AGENT_NAME[value.agent]}</div>
+      {value.agent === 'codex' && (
         <Toggle
           checked={!!value.fast}
           onChange={(fast) => onChange({ ...value, fast })}

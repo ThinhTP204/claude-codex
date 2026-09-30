@@ -70,6 +70,8 @@ async function suggestCommitMessage(root: string, agent: Agent): Promise<string>
   const cfg: RunConfig =
     agent === 'claude'
       ? { agent, model: 'haiku', effort: 'low', permission: 'read' }
+      : agent === 'antigravity'
+        ? { agent, model: '', effort: 'low', permission: 'read' }
       : { agent, model: codexModels.find((m) => m.id === 'gpt-5.5')?.id || codexModels[codexModels.length - 1]?.id || 'gpt-5.5', effort: 'low', permission: 'read' };
   const prompt =
     'Write a git commit message for the diff below. Conventional Commits style (feat/fix/refactor/docs/chore…), ' +
@@ -164,7 +166,7 @@ export function start(opts: StartOptions): Promise<http.Server> {
           case 'POST /git/fetch':
             return done(await gitFetch(root));
           case 'POST /git/suggest-message':
-            return { message: await suggestCommitMessage(root, b.agent === 'codex' ? 'codex' : 'claude') };
+            return { message: await suggestCommitMessage(root, b.agent === 'codex' || b.agent === 'antigravity' ? b.agent : 'claude') };
         }
       } catch (e) {
         throw new HttpError(e instanceof GitError ? 400 : 500, (e as Error).message);

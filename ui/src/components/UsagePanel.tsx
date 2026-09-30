@@ -44,7 +44,12 @@ const shortLabel = (l: string) => (l === '5 giờ' ? '5h' : l.startsWith('Tuần
 
 /** Compact rows at the bottom of the sidebar */
 function MiniRow({ agent, u, connected }: { agent: Agent; u?: AgentUsage; connected?: boolean }) {
-  const main = u?.windows.slice(0, 2) || [];
+  // several pools (Antigravity: Gemini + Claude/GPT) → show the tightest 5h / weekly window
+  const worst = (re: RegExp) => (u?.windows || []).filter((w) => re.test(w.label)).sort((a, b) => b.usedPercent - a.usedPercent)[0];
+  const main =
+    (u?.windows.length || 0) > 2
+      ? [worst(/5 giờ/), worst(/Tuần/)].filter((w): w is UsageWindow => !!w).map((w) => ({ ...w, label: /Tuần/.test(w.label) ? 'Tuần' : '5 giờ' }))
+      : u?.windows.slice(0, 2) || [];
   const credits = u?.resetCredits?.length || 0;
   return (
     <div className="flex items-center gap-2">
@@ -67,12 +72,15 @@ function MiniRow({ agent, u, connected }: { agent: Agent; u?: AgentUsage; connec
       ) : (
         <span className="min-w-0 flex-1 truncate text-[11.5px] text-faint">{u ? 'Không đọc được usage' : 'Đang tải…'}</span>
       )}
-      {agent === 'codex' && credits > 0 && (
-        <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-accent/10 px-1 text-[10.5px] font-medium text-accent" title={`${credits} lượt reset trong bank`}>
-          <RotateCcw size={10} />
-          {credits}
-        </span>
-      )}
+      {/* fixed slot on every row so the bars of all agents line up */}
+      <span className="flex w-7 shrink-0 justify-end">
+        {agent === 'codex' && credits > 0 && (
+          <span className="inline-flex items-center gap-0.5 rounded bg-accent/10 px-1 text-[10.5px] font-medium leading-4 text-accent" title={`${credits} lượt reset trong bank`}>
+            <RotateCcw size={10} />
+            {credits}
+          </span>
+        )}
+      </span>
     </div>
   );
 }
@@ -231,6 +239,7 @@ export function UsagePanel() {
   const loading = useStore((s) => s.usageLoading);
   const health = useStore((s) => s.health);
   const fetchedAt = Math.min(usage?.claude.fetchedAt || Infinity, usage?.codex.fetchedAt || Infinity);
+  const shown = (['claude', 'codex', 'antigravity'] as Agent[]).filter((a) => a !== 'antigravity' || health?.antigravity?.installed);
 
   return (
     <Popover
@@ -248,8 +257,8 @@ export function UsagePanel() {
             Usage
             {loading && <Spinner size={10} className="ml-1.5" />}
           </div>
-          {(['claude', 'codex'] as Agent[]).map((a) => (
-            <MiniRow key={a} agent={a} u={usage?.[a]} connected={health ? health[a].loggedIn : undefined} />
+          {shown.map((a) => (
+            <MiniRow key={a} agent={a} u={usage?.[a]} connected={health ? health[a]?.loggedIn : undefined} />
           ))}
         </button>
       )}
@@ -268,8 +277,9 @@ export function UsagePanel() {
               {loading ? <Spinner size={11} /> : <RefreshCw size={12} />} Làm mới
             </button>
           </div>
-          <AgentSection agent="claude" />
-          <AgentSection agent="codex" />
+          {shown.map((a) => (
+            <AgentSection key={a} agent={a} />
+          ))}
           <div className="px-1 text-[11px] text-faint">
             {Number.isFinite(fetchedAt) && `Cập nhật lúc ${new Date(fetchedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} · `}
             tự làm mới mỗi 5 phút và sau mỗi lượt chạy

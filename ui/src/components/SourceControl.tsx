@@ -354,10 +354,13 @@ export function SourceControl() {
                 void commit(e.shiftKey);
               }
             }}
-            placeholder={`Commit message (⌘Enter commit, ⇧⌘Enter commit & push)${staged.length ? '' : '\nChưa stage file nào: sẽ commit tất cả thay đổi'}`}
+            placeholder="Commit message…"
             className="block max-h-40 w-full resize-none bg-transparent px-2.5 py-2 text-[13px] outline-none placeholder:text-faint"
           />
-          <div className="flex items-center justify-end px-1.5 pb-1.5">
+          <div className="flex items-center gap-2 px-2 pb-1.5">
+            <span className="min-w-0 flex-1 truncate text-[10.5px] text-faint" title="⌘Enter: commit · ⇧⌘Enter: commit & push">
+              {staged.length ? `${staged.length} file đã stage` : total ? 'Sẽ commit tất cả thay đổi' : ''} · ⌘↵
+            </span>
             <button
               type="button"
               onClick={suggest}

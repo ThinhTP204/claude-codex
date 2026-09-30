@@ -6,7 +6,7 @@ import { startRun, type RunHandle, type RunResult } from './runner.ts';
 import { listNativeSessions, nativeTurns } from './sessions.ts';
 
 export const NEW_TITLE = 'Cuộc trò chuyện mới';
-const AGENT_LABEL: Record<Agent, string> = { claude: 'Claude', codex: 'Codex' };
+const AGENT_LABEL: Record<Agent, string> = { claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity' };
 
 let broadcast: (msg: ServerMessage) => void = () => {};
 export const setBroadcast = (fn: typeof broadcast) => (broadcast = fn);
@@ -95,7 +95,7 @@ export function createConv(projectPath: string): Conversation {
     createdAt: Date.now(),
     updatedAt: Date.now(),
     sessions: {},
-    seen: { claude: 0, codex: 0 },
+    seen: {},
     turns: [],
     source: 'app',
   };
@@ -128,9 +128,9 @@ export function getConv(id: string, projectPath?: string): Conversation | undefi
     createdAt: turns[0]?.createdAt || Date.now(),
     updatedAt: Date.now(),
     sessions: { [agent]: m[2] },
-    seen: { claude: agent === 'claude' ? turns.length : 0, codex: agent === 'codex' ? turns.length : 0 },
+    seen: { [agent]: turns.length },
     turns,
-    source: agent,
+    source: agent as 'claude' | 'codex',
     importedCount: turns.length,
   };
   const native = listNativeSessions(projectPath).find((s) => s.id === id);
@@ -256,7 +256,7 @@ export async function executeTurn(c: Conversation, o: TurnOptions): Promise<{ tu
     const handle = startRun(cfg, context + o.prompt, c.projectPath, c.sessions[agent], {
       onSession(id, model) {
         c.sessions[agent] = id;
-        if (model && agent === 'claude') turn.model = model;
+        if (model && agent !== 'codex') turn.model = model;
       },
       onDelta(text) {
         broadcast({ type: 'turn', convId: c.id, turnId: turn.id, ev: { t: 'delta', text } });

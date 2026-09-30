@@ -18,6 +18,21 @@ export function AgentIcon({ agent, size = 16 }: { agent: Agent; size?: number })
       </svg>
     );
   }
+  if (agent === 'antigravity') {
+    // Antigravity: Google-blue tile with an upward arrow
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" aria-label="Antigravity" className="shrink-0">
+        <defs>
+          <linearGradient id="agy-g" x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0" stopColor="#4285f4" />
+            <stop offset="1" stopColor="#a142f4" />
+          </linearGradient>
+        </defs>
+        <rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="url(#agy-g)" />
+        <path d="M12 17V7M7.5 11.5 12 7l4.5 4.5" stroke="white" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-label="Codex" className="shrink-0">
       <rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="var(--codex)" />
@@ -26,7 +41,7 @@ export function AgentIcon({ agent, size = 16 }: { agent: Agent; size?: number })
   );
 }
 
-export const AGENT_NAME: Record<Agent, string> = { claude: 'Claude', codex: 'Codex' };
+export const AGENT_NAME: Record<Agent, string> = { claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity' };
 
 export const PERMISSIONS: { id: Permission; label: string; short: string; desc: string }[] = [
   { id: 'read', label: 'Chỉ đọc', short: 'Đọc', desc: 'Đọc code, không sửa gì' },

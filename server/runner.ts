@@ -71,6 +71,22 @@ export function codexArgs(cfg: RunConfig, resume?: string): string[] {
   return a;
 }
 
+/**
+ * Google Antigravity CLI (`agy`). The prompt goes through stdin as a stream-json "user"
+ * event (no command-line length limits); stdin is closed once the `result` event arrives.
+ */
+export function agyArgs(cfg: RunConfig, resume?: string): string[] {
+  const a = ['--input-format', 'stream-json', '--output-format', 'stream-json', '--print-timeout', '60m0s'];
+  if (cfg.model) a.push('--model', cfg.model);
+  if (cfg.effort) a.push('--effort', cfg.effort);
+  if (resume) a.push('--conversation', resume);
+  // headless mode can't ask for approval: writing agents run with auto-approve,
+  // sandboxed unless the user picked full access
+  if (cfg.permission !== 'read') a.push('--dangerously-skip-permissions');
+  if (cfg.permission === 'write' || cfg.permission === 'exec') a.push('--sandbox');
+  return a;
+}
+
 function textOf(content: unknown): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) return content.map((c) => (typeof c === 'string' ? c : c?.text ?? '')).join('\n');
@@ -87,8 +103,9 @@ export function summarizeToolInput(name: string, input: Record<string, unknown>)
 
 export function startRun(cfg: RunConfig, prompt: string, cwd: string, resume: string | undefined, ev: RunEvents): RunHandle {
   const isClaude = cfg.agent === 'claude';
-  const bin = isClaude ? 'claude' : 'codex';
-  const args = isClaude ? claudeArgs(cfg, resume) : codexArgs(cfg, resume);
+  const isAgy = cfg.agent === 'antigravity';
+  const bin = isClaude ? 'claude' : isAgy ? 'agy' : 'codex';
+  const args = isClaude ? claudeArgs(cfg, resume) : isAgy ? agyArgs(cfg, resume) : codexArgs(cfg, resume);
   const fullPrompt = !isClaude && cfg.systemPrompt?.trim() ? `<instructions>\n${cfg.systemPrompt}\n</instructions>\n\n${prompt}` : prompt;
 
   const started = Date.now();
@@ -104,7 +121,8 @@ export function startRun(cfg: RunConfig, prompt: string, cwd: string, resume: st
     const { cmd, pre } = resolveCommand(bin);
     child = spawn(cmd, [...pre, ...args], { cwd, env: process.env, ...spawnOpts, stdio: ['pipe', 'pipe', 'pipe'] });
     child.stdin!.on('error', () => {});
-    child.stdin!.end(fullPrompt);
+    if (isAgy) child.stdin!.write(JSON.stringify({ event: 'user', message: { content: fullPrompt } }) + '\n');
+    else child.stdin!.end(fullPrompt);
     child.stderr!.on('data', (d) => {
       stderr = (stderr + d.toString()).slice(-4000);
     });
@@ -123,6 +141,7 @@ export function startRun(cfg: RunConfig, prompt: string, cwd: string, resume: st
       }
       try {
         if (isClaude) handleClaude(e);
+        else if (isAgy) handleAgy(e);
         else handleCodex(e);
       } catch (err) {
         console.error('[runner] parse error', err);
@@ -198,6 +217,56 @@ export function startRun(cfg: RunConfig, prompt: string, cwd: string, resume: st
         } else if (e.result && !texts.includes(e.result)) {
           texts.push(e.result);
         }
+        break;
+      }
+    }
+  }
+
+  // ---- Antigravity (agy) stream-json: init / step_update / result ----
+  const agySteps = new Map<number, string>();
+  function handleAgy(e: any) {
+    switch (e.event) {
+      case 'init':
+        ev.onSession(e.conversation_id, e.init?.model || cfg.model);
+        break;
+      case 'step_update': {
+        const u = e.step_update || {};
+        const idx = Number(u.step_index ?? 0);
+        const id = `agy-${idx}`;
+        const tool = u.tool_info || (u.tool_name ? { name: u.tool_name } : undefined);
+        if (tool || u.step_type === 'tool') {
+          const params = (tool?.parameters || {}) as Record<string, unknown>;
+          const name = String(tool?.name || u.tool_name || 'tool');
+          const err = tool?.error?.message || tool?.error?.type;
+          ev.onBlock({
+            type: 'tool',
+            id,
+            name,
+            input: summarizeToolInput(name, params),
+            output: tool?.output ? clip(String(tool.output)) : err ? String(err) : undefined,
+            status: u.state === 'DONE' ? (err ? 'error' : 'done') : 'running',
+          });
+        } else if (typeof u.text_delta === 'string' && u.text_delta) {
+          const text = (agySteps.get(idx) || '') + u.text_delta;
+          agySteps.set(idx, text);
+          const thinking = /think|plan|reason/i.test(String(u.step_type || ''));
+          ev.onBlock(thinking ? { type: 'thinking', id, text } : { type: 'text', id, text });
+          if (u.state === 'DONE' && !thinking) texts.push(text);
+        }
+        break;
+      }
+      case 'result': {
+        gotResult = true;
+        const r = e.result || {};
+        const u = r.usage || {};
+        usage = {
+          inputTokens: (u.input_tokens || 0) + (u.cache_read_tokens || 0),
+          outputTokens: (u.output_tokens || 0) + (u.thinking_tokens || 0),
+          cachedTokens: u.cache_read_tokens || 0,
+        };
+        if (r.status && r.status !== 'SUCCESS') error = r.error || `Antigravity: ${r.status}`;
+        else if (r.response && !texts.includes(r.response)) texts.push(r.response);
+        child.stdin?.end(); // one prompt per run: let agy exit
         break;
       }
     }
