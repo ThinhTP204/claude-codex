@@ -12,19 +12,27 @@ const STEPS: { id: Phase; label: string }[] = [
   { id: 'restart', label: 'Khởi động lại' },
 ];
 
-/** Small entry in the sidebar: only shows up when GitHub has a newer version. */
+/** Always-visible sidebar entry: version + "Cập nhật"; turns orange when GitHub has something newer. */
 export function UpdateBadge() {
   const u = useStore((s) => s.update);
-  if (!u?.behind) return null;
+  const behind = u?.behind || 0;
   return (
     <button
       type="button"
       onClick={() => setState({ showUpdate: true })}
-      className="mx-2 mb-1 flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/10 px-2.5 py-1.5 text-left text-[12.5px] text-accent hover:bg-accent/15"
+      title={behind ? `Có ${behind} thay đổi mới, bấm để cập nhật` : 'Kiểm tra cập nhật'}
+      className={cx(
+        'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px]',
+        behind ? 'bg-accent/10 font-medium text-accent hover:bg-accent/15' : 'text-muted hover:bg-hover hover:text-fg',
+      )}
     >
       <ArrowUpCircle size={15} className="shrink-0" />
-      <span className="min-w-0 flex-1 truncate font-medium">Có bản cập nhật</span>
-      <span className="shrink-0 rounded-full bg-accent px-1.5 text-[10.5px] font-semibold leading-4 text-white">{u.behind}</span>
+      <span className="min-w-0 flex-1 truncate text-left">{behind ? 'Có bản cập nhật' : 'Cập nhật'}</span>
+      {behind ? (
+        <span className="shrink-0 rounded-full bg-accent px-1.5 text-[10.5px] font-semibold leading-4 text-white">{behind}</span>
+      ) : (
+        u?.commit && <code className="shrink-0 text-[11px] font-normal text-faint">{u.commit}</code>
+      )}
     </button>
   );
 }

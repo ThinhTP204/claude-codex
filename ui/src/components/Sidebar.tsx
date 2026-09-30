@@ -117,7 +117,6 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }) {
         ))}
       </nav>
 
-      <UpdateBadge />
       <div className="space-y-0.5 border-t border-line px-2 py-2">
         <button type="button" onClick={() => setState({ activeTab: 'flow' })} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] text-muted hover:bg-hover hover:text-fg">
           <Workflow size={15} /> Pipelines
@@ -125,6 +124,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }) {
         <button type="button" onClick={() => setState({ showRoles: true })} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] text-muted hover:bg-hover hover:text-fg">
           <Users size={15} /> Vai trò & model
         </button>
+        <UpdateBadge />
         <UsagePanel />
       </div>
     </aside>
