@@ -622,7 +622,8 @@ function onMessage(msg: ServerMessage): void {
         for (const p of msg.paths) touched[fileKey(p, root)] = now;
         setState((s) => ({ fsVersion: s.fsVersion + 1, touched }));
         clearTimeout(gitTimer);
-        gitTimer = setTimeout(refreshGit, 400);
+        // agents write files in bursts: refresh git once things settle, not after every save
+        gitTimer = setTimeout(refreshGit, 1500);
       }
       break;
   }
@@ -648,7 +649,10 @@ export function boot(): void {
     if (start) await openProject(start);
     void refreshHealth();
     void refreshUsage();
-    setInterval(() => void refreshUsage(true), 5 * 60_000);
+    setInterval(() => document.visibilityState === 'visible' && void refreshUsage(true), 5 * 60_000);
+    const vis = () => document.documentElement.classList.toggle('page-hidden', document.visibilityState !== 'visible');
+    document.addEventListener('visibilitychange', vis);
+    vis();
     window.addEventListener('focus', () => void refreshGit());
   })();
 }

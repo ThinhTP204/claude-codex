@@ -397,16 +397,33 @@ button:disabled {
   stroke: var(--accent);
 }
 
-@keyframes pulse-ring {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+/* running node: a soft halo that only changes opacity (GPU-composited, no repaint each frame) */
+@keyframes halo {
+  0%, 100% {
+    opacity: 0.15;
   }
-  100% {
-    box-shadow: 0 0 0 10px transparent;
+  50% {
+    opacity: 0.6;
   }
 }
 .node-running {
-  animation: pulse-ring 1.4s ease-out infinite;
+  position: relative;
+}
+.node-running::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: inherit;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 45%, transparent);
+  animation: halo 2.4s ease-in-out infinite;
+  pointer-events: none;
+  will-change: opacity;
+}
+/* nothing keeps animating while the window is hidden or minimised */
+html.page-hidden *,
+html.page-hidden *::before,
+html.page-hidden *::after {
+  animation-play-state: paused !important;
 }
 
 @keyframes blink {

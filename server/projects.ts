@@ -373,7 +373,24 @@ export async function projectRepos(root: string): Promise<{ path: string; rel: s
   );
 }
 
-async function ownStatus(root: string): Promise<{ branch?: string; files: Record<string, string> }> {
+const statusCache = new Map<string, { at: number; p: Promise<{ branch?: string; files: Record<string, string> }> }>();
+
+/** Forget cached statuses (after commit/stage/checkout… the next read must be fresh). */
+export function clearStatusCache(): void {
+  statusCache.clear();
+}
+
+/** `git status` of one repo; calls within a second share one git process (the UI asks for repos + status together). */
+function ownStatus(root: string): Promise<{ branch?: string; files: Record<string, string> }> {
+  const hit = statusCache.get(root);
+  if (hit && Date.now() - hit.at < 1000) return hit.p.then((r) => ({ branch: r.branch, files: { ...r.files } }));
+  const p = readStatus(root);
+  statusCache.set(root, { at: Date.now(), p });
+  if (statusCache.size > 50) statusCache.delete(statusCache.keys().next().value!);
+  return p.then((r) => ({ branch: r.branch, files: { ...r.files } }));
+}
+
+async function readStatus(root: string): Promise<{ branch?: string; files: Record<string, string> }> {
   const prefix = await gitPrefix(root);
   if (prefix === null) return { files: {} };
   // paths come back relative to the repo root; `-- .` limits them to this project folder

@@ -124,9 +124,9 @@ function StepDot({ st }: { st: NodeRunState }) {
       );
     case 'awaiting':
       return (
-        <span className={cx(base, 'relative bg-warn text-white')}>
-          <span className="absolute inset-0 animate-ping rounded-full bg-warn/40" />
-          <Pause size={9} fill="currentColor" strokeWidth={0} className="relative" />
+        // static halo: a run can wait for approval for hours, don't animate all that time
+        <span className={cx(base, 'bg-warn text-white ring-[3px] ring-warn/25')}>
+          <Pause size={9} fill="currentColor" strokeWidth={0} />
         </span>
       );
     case 'done':

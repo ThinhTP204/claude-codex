@@ -24,7 +24,7 @@ import {
 } from './conversations.ts';
 import { approve, rerun, startPipeline, stopPipeline } from './pipeline.ts';
 import { deletePipeline, getPipelines, getRoles, savePipeline, saveRoles, DEFAULT_ROLES } from './roles.ts';
-import { browseDirs, projectRepos, resolveFileRef, safeJoin, forgetProject, setWorkspaceFolders, workspaceFolders, gitHead, gitStatus, listDir, openProject, pickFolder, readFile, recentProjects, watchProject, writeFile } from './projects.ts';
+import { browseDirs, clearStatusCache, projectRepos, resolveFileRef, safeJoin, forgetProject, setWorkspaceFolders, workspaceFolders, gitHead, gitStatus, listDir, openProject, pickFolder, readFile, recentProjects, watchProject, writeFile } from './projects.ts';
 import { ATTACH_DIR, realpathSafe } from './store.ts';
 
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
@@ -165,7 +165,10 @@ export function start(opts: StartOptions): Promise<http.Server> {
     if (p.startsWith('/git/') && p !== '/git/status') {
       const root = project();
       const b = m === 'POST' ? await body<any>(req) : {};
-      const done = async (out?: unknown) => ({ ok: true, out, info: await gitInfo(root) });
+      const done = async (out?: unknown) => {
+        clearStatusCache();
+        return { ok: true, out, info: await gitInfo(root) };
+      };
       try {
         switch (`${m} ${p}`) {
           case 'GET /git/info':
