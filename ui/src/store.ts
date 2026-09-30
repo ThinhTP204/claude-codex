@@ -511,6 +511,18 @@ export async function openFileRef(ref: string): Promise<void> {
   toast(`Không tìm thấy file "${ref}" trong workspace`, 'info');
 }
 
+const closable = (t: Tab) => t.kind === 'file' || t.kind === 'preview';
+
+/** Close several tabs at once (Chat and Flow always stay). */
+export function closeTabs(which: 'all' | 'others' | 'right', id?: string): void {
+  setState((s) => {
+    const at = s.tabs.findIndex((t) => t.id === id);
+    const tabs = s.tabs.filter((t, i) => !closable(t) || (which === 'others' && t.id === id) || (which === 'right' && i <= at));
+    const activeTab = tabs.some((t) => t.id === s.activeTab) ? s.activeTab : id && tabs.some((t) => t.id === id) ? id : 'chat';
+    return { tabs, activeTab };
+  });
+}
+
 export function closeTab(id: string): void {
   setState((s) => {
     const i = s.tabs.findIndex((t) => t.id === id);

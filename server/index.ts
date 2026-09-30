@@ -24,7 +24,7 @@ import {
 } from './conversations.ts';
 import { approve, rerun, startPipeline, stopPipeline } from './pipeline.ts';
 import { deletePipeline, getPipelines, getRoles, savePipeline, saveRoles, DEFAULT_ROLES } from './roles.ts';
-import { browseDirs, resolveFileRef, forgetProject, setWorkspaceFolders, workspaceFolders, gitHead, gitStatus, listDir, openProject, pickFolder, readFile, recentProjects, watchProject, writeFile } from './projects.ts';
+import { browseDirs, resolveFileRef, safeJoin, forgetProject, setWorkspaceFolders, workspaceFolders, gitHead, gitStatus, listDir, openProject, pickFolder, readFile, recentProjects, watchProject, writeFile } from './projects.ts';
 import { ATTACH_DIR, realpathSafe } from './store.ts';
 
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
@@ -38,6 +38,8 @@ const MIME: Record<string, string> = {
   '.jpeg': 'image/jpeg',
   '.gif': 'image/gif',
   '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.bmp': 'image/bmp',
   '.pdf': 'application/pdf',
   '.ico': 'image/x-icon',
   '.json': 'application/json',
@@ -306,14 +308,25 @@ export function start(opts: StartOptions): Promise<http.Server> {
         res.writeHead(401, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'Sai token. Hãy mở app bằng lệnh agentdesk.' }));
         return;
       }
-      // attachment preview (images in the chat): raw bytes, only from the attachments folder
-      if (url.pathname === '/api/attachment') {
-        const f = path.resolve(url.searchParams.get('path') || '');
-        if (!f.startsWith(ATTACH_DIR + path.sep) || !fs.existsSync(f)) {
+      // raw bytes for <img>/<embed>: chat attachments, or a file inside an open project (image preview)
+      if (url.pathname === '/api/attachment' || url.pathname === '/api/fs/raw') {
+        let f = '';
+        try {
+          if (url.pathname === '/api/attachment') {
+            f = path.resolve(url.searchParams.get('path') || '');
+            if (!f.startsWith(ATTACH_DIR + path.sep)) f = '';
+          } else {
+            const root = url.searchParams.get('project') || '';
+            if (root && fs.existsSync(root)) f = safeJoin(root, url.searchParams.get('path') || '');
+          }
+        } catch {
+          f = '';
+        }
+        if (!f || !fs.existsSync(f) || !fs.statSync(f).isFile()) {
           res.writeHead(404).end();
           return;
         }
-        res.writeHead(200, { 'content-type': MIME[path.extname(f).toLowerCase()] || 'application/octet-stream', 'cache-control': 'max-age=86400' });
+        res.writeHead(200, { 'content-type': MIME[path.extname(f).toLowerCase()] || 'application/octet-stream', 'cache-control': 'no-cache' });
         fs.createReadStream(f).pipe(res);
         return;
       }

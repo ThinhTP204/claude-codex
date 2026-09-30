@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Globe, MessageSquare, PanelLeftOpen, PanelRightOpen, SquareTerminal, Workflow, X } from 'lucide-react';
-import { closeTab, LS, newConv, setState, toggleTermPanel, useStore } from './store.ts';
+import { CopyX, Globe, MessageSquare, PanelLeftOpen, PanelRightOpen, SquareTerminal, Workflow, X } from 'lucide-react';
+import { closeTab, closeTabs, LS, newConv, setState, toggleTermPanel, useStore } from './store.ts';
 import { TerminalPanel } from './components/TerminalPanel.tsx';
 import { PreviewView } from './components/PreviewView.tsx';
 import { Sidebar } from './components/Sidebar.tsx';
@@ -13,6 +13,7 @@ import { useOpenShortcut } from './components/ProjectMenu.tsx';
 import { cx, Spinner } from './components/ui.tsx';
 
 // Monaco and React Flow are heavy: load them only when their tab opens
+import { MEDIA_RE, MediaView } from './components/MediaView.tsx';
 const FileView = lazy(() => import('./components/FileView.tsx').then((m) => ({ default: m.FileView })));
 const FlowView = lazy(() => import('./components/FlowView.tsx').then((m) => ({ default: m.FlowView })));
 
@@ -97,6 +98,18 @@ export function App() {
   const [rightOpen, setRightOpen] = useWidth('rightOpen', 1);
   const [termH, setTermH] = useWidth('termH', 280);
   const termOpen = useStore((s) => s.termOpen);
+  const [tabMenu, setTabMenu] = useState<{ x: number; y: number; id: string }>();
+  const openFileTabs = tabs.filter((t) => t.kind === 'file' || t.kind === 'preview').length;
+  useEffect(() => {
+    if (!tabMenu) return;
+    const close = () => setTabMenu(undefined);
+    window.addEventListener('mousedown', close);
+    window.addEventListener('blur', close);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('blur', close);
+    };
+  }, [tabMenu]);
   useOpenShortcut();
   // keep the flow editor mounted after first open so unsaved edits survive tab switches
   const [flowSeen, setFlowSeen] = useState(false);
@@ -157,6 +170,35 @@ export function App() {
         </>
       ) : null}
 
+      {tabMenu && (
+        <div
+          className="fixed z-50 w-52 rounded-lg border border-line bg-raised p-1 text-[13px] shadow-pop"
+          style={{ left: Math.min(tabMenu.x, window.innerWidth - 216), top: tabMenu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {(
+            [
+              ['Đóng', () => closeTab(tabMenu.id), tabs.some((t) => t.id === tabMenu.id && (t.kind === 'file' || t.kind === 'preview'))],
+              ['Đóng các tab khác', () => closeTabs('others', tabMenu.id), openFileTabs > 0],
+              ['Đóng các tab bên phải', () => closeTabs('right', tabMenu.id), true],
+              ['Đóng tất cả tab file', () => closeTabs('all'), openFileTabs > 0],
+            ] as const
+          ).map(([label, act, enabled]) => (
+            <button
+              key={label}
+              type="button"
+              disabled={!enabled}
+              onClick={() => {
+                act();
+                setTabMenu(undefined);
+              }}
+              className="block w-full rounded-md px-2.5 py-1.5 text-left hover:bg-hover disabled:opacity-40 disabled:hover:bg-transparent"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-10 shrink-0 items-end gap-0 border-b border-line bg-sidebar/60 pl-1 pr-2">
           {!leftOpen && (
@@ -192,6 +234,10 @@ export function App() {
                   key={t.id}
                   onClick={() => setState({ activeTab: t.id })}
                   onAuxClick={(e) => e.button === 1 && (t.kind === 'file' || t.kind === 'preview') && closeTab(t.id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setTabMenu({ x: e.clientX, y: e.clientY, id: t.id });
+                  }}
                   title={t.kind === 'file' ? (t.root ? `${t.root.split(/[\\/]/).pop()} › ${t.path}` : t.path) : label}
                   className={cx(
                     'group relative flex h-9 max-w-[240px] shrink-0 cursor-pointer items-center gap-1.5 border-r border-line px-3 text-[13px]',
@@ -225,6 +271,11 @@ export function App() {
               );
             })}
           </div>
+          {openFileTabs > 1 && (
+            <button type="button" onClick={() => closeTabs('all')} className="mb-1.5 ml-1 rounded-md p-1 text-muted hover:bg-hover hover:text-fg" title={`Đóng tất cả ${openFileTabs} tab file (chuột phải vào tab để có thêm lựa chọn)`}>
+              <CopyX size={16} />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => toggleTermPanel()}
@@ -246,7 +297,7 @@ export function App() {
                 <ChatView />
               ) : (
                 <Suspense fallback={<div className="grid h-full place-items-center"><Spinner /></div>}>
-                  {t.kind === 'flow' ? flowSeen ? <FlowView /> : null : t.kind === 'preview' ? <PreviewView url={t.url} /> : <FileView path={t.path} root={t.root} diff={t.diff} line={t.line} nonce={t.nonce} />}
+                  {t.kind === 'flow' ? flowSeen ? <FlowView /> : null : t.kind === 'preview' ? <PreviewView url={t.url} /> : MEDIA_RE.test(t.path) ? <MediaView path={t.path} root={t.root} /> : <FileView path={t.path} root={t.root} diff={t.diff} line={t.line} nonce={t.nonce} />}
                 </Suspense>
               )}
             </div>
