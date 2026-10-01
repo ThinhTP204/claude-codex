@@ -87,21 +87,34 @@ export function Popover({
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLSpanElement>(null);
   const pop = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ left: number; top: number; maxH: number }>({ left: 0, top: 0, maxH: 400 });
+  // a popover opening upwards is pinned by its bottom edge: content that grows after the first
+  // paint (model lists, icons) extends upwards instead of sliding down over the button
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; maxH: number; ready: boolean }>({ left: 0, top: 0, maxH: 400, ready: false });
 
   useLayoutEffect(() => {
     if (!open || !anchor.current || !pop.current) return;
-    const a = anchor.current.getBoundingClientRect();
-    const p = pop.current.getBoundingClientRect();
-    const up = placement.startsWith('top');
-    let left = placement.endsWith('end') ? a.right - p.width : a.left;
-    left = Math.max(8, Math.min(left, window.innerWidth - p.width - 8));
-    const spaceBelow = window.innerHeight - a.bottom - 12;
-    const spaceAbove = a.top - 12;
-    const goUp = up ? spaceAbove > 160 || spaceAbove > spaceBelow : spaceBelow < 200 && spaceAbove > spaceBelow;
-    const maxH = Math.max(160, goUp ? spaceAbove : spaceBelow);
-    const h = Math.min(p.height, maxH);
-    setPos({ left, top: goUp ? a.top - h - 6 : a.bottom + 6, maxH });
+    const place = () => {
+      if (!anchor.current || !pop.current) return;
+      const a = anchor.current.getBoundingClientRect();
+      const p = pop.current.getBoundingClientRect();
+      const up = placement.startsWith('top');
+      let left = placement.endsWith('end') ? a.right - p.width : a.left;
+      left = Math.max(8, Math.min(left, window.innerWidth - p.width - 8));
+      const spaceBelow = window.innerHeight - a.bottom - 12;
+      const spaceAbove = a.top - 12;
+      const goUp = up ? spaceAbove > 160 || spaceAbove > spaceBelow : spaceBelow < 200 && spaceAbove > spaceBelow;
+      const maxH = Math.max(160, goUp ? spaceAbove : spaceBelow);
+      setPos(goUp ? { left, bottom: window.innerHeight - a.top + 6, maxH, ready: true } : { left, top: a.bottom + 6, maxH, ready: true });
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(pop.current);
+    window.addEventListener('resize', place);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', place);
+      setPos((x) => ({ ...x, ready: false }));
+    };
   }, [open, placement]);
 
   useEffect(() => {
@@ -130,7 +143,7 @@ export function Popover({
         createPortal(
           <div
             ref={pop}
-            style={{ left: pos.left, top: pos.top, maxHeight: pos.maxH, width }}
+            style={{ left: pos.left, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxH, width, visibility: pos.ready ? undefined : 'hidden' }}
             className="fixed z-50 overflow-auto rounded-xl border border-line bg-raised p-1 shadow-pop"
           >
             {children(() => setOpen(false))}

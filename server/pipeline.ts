@@ -13,7 +13,9 @@ const VERDICT_INSTRUCTION =
   '- Góp ý nhỏ, cải tiến thêm, cách viết khác, rủi ro thấp: vẫn `VERDICT: PASS`, ghi vào mục `Lưu ý:`.\n' +
   '- Nếu kết luận phụ thuộc vào một quyết định nghiệp vụ mà chỉ người dùng trả lời được (bước trước không thể tự chốt): `VERDICT: ASK`, ' +
   'và ngay trước đó viết mục `Câu hỏi:` (tối đa 3 câu, mỗi câu kèm phương án đề xuất).\n' +
-  '- Nếu FAIL: ngay trước dòng VERDICT, viết mục `Cần sửa:` liệt kê ngắn gọn (tối đa 5 ý) những gì bước trước phải làm lại. ' +
+  '- Nếu FAIL: ngay trước dòng VERDICT, viết mục `Cần sửa:` liệt kê ĐỦ mọi vấn đề chặn ngay trong lần này, gom theo nhóm; ' +
+  'mỗi ý ghi chỗ cụ thể (file:dòng hoặc bước) và thế nào thì coi là đạt. Lần chấm sau chỉ kiểm tra lại đúng các ý này, ' +
+  'nên ý bỏ sót bây giờ sẽ không được nêu thêm (trừ lỗi chặn mới do lần sửa gây ra). ' +
   'Lỗi từ lệnh (build/test/lint): ghi kèm đúng lệnh đã chạy, file:dòng và vài dòng lỗi gốc, để bước sau tái hiện và sửa tận gốc.\n' +
   'Dòng CUỐI CÙNG phải là đúng một trong: `VERDICT: PASS`, `VERDICT: FAIL`, `VERDICT: ASK`.';
 
@@ -41,6 +43,7 @@ export function retryFeedback(run: PipelineRun, node: PNode, cfg: RunConfig): st
     (canRun
       ? '- Chạy lại đúng lệnh build/test đã lỗi để xác nhận đã hết lỗi trước khi kết thúc.\n'
       : '- Bạn không chạy được lệnh: đọc kỹ log/nhận xét và code liên quan, suy luận cẩn thận trước khi sửa.\n') +
+    '- Làm hết các ý trong một lần, không bỏ ý nào lại cho vòng sau. Trước khi kết thúc, tự kiểm lại từng ý theo đúng tiêu chí "thế nào là đạt" mà bước chấm nêu.\n' +
     '- Cuối câu trả lời liệt kê: từng ý → nguyên nhân → đã xử lý thế nào (file:dòng nếu có).'
   );
 }
@@ -64,9 +67,29 @@ function recheckInstruction(demands: string): string {
     '\n</previous-demands>\n\n' +
     'Chỉ kiểm tra: (1) từng ý trên đã được xử lý đúng chưa — ghi rõ ý nào ĐÃ XỬ LÝ / CHƯA; ' +
     '(2) lần sửa này có gây ra lỗi chặn mới không. Không soi lại từ đầu; góp ý mới không chặn thì ghi vào `Lưu ý:` và vẫn PASS. ' +
+    'Ý cũ đã xử lý đúng thì không đòi thêm cách làm khác. Lỗi chặn mới chỉ tính khi do chính lần sửa này gây ra (xem `git diff`). ' +
     '`VERDICT: FAIL` chỉ khi còn ý cũ chưa xử lý hoặc có lỗi chặn mới.'
   );
 }
+
+/** A checker that already passed runs again (a later step looped back): only look for regressions. */
+const REGRESSION_CHECK =
+  '\n\n---\nĐÂY LÀ LẦN CHẤM LẠI. Lần trước bạn đã cho ĐẠT. Không review lại từ đầu: chỉ xem những gì thay đổi từ lần đó (`git diff`) ' +
+  'có gây lỗi chặn mới không. Góp ý mới không chặn ghi vào `Lưu ý:` và vẫn PASS.';
+
+/** Rough overlap of two lists of demands (0–1): the same complaints coming back means the fixes are not landing. */
+function overlap(a: string, b: string): number {
+  const words = (s: string) => new Set(s.toLowerCase().split(/[^\p{L}\p{N}_./:-]+/u).filter((w) => w.length > 3));
+  const x = words(a);
+  const y = words(b);
+  if (!x.size || !y.size) return 0;
+  let both = 0;
+  for (const w of x) if (y.has(w)) both++;
+  return both / Math.min(x.size, y.size);
+}
+
+/** Fixing rounds a checker allows before asking the user (each one costs a fix + a re-check). */
+const AUTO_FIX_ROUNDS = 2;
 
 export function parseVerdict(text: string): 'pass' | 'fail' | 'ask' | undefined {
   const all = [...text.matchAll(/VERDICT\s*[:：]\s*\**\s*(PASS|FAIL|ASK)/gi)];
@@ -112,7 +135,7 @@ function addNote(c: Conversation, text: string, node?: PNode) {
 
 async function execNode(c: Conversation, run: PipelineRun, node: PNode): Promise<void> {
   const st = run.nodes[node.id];
-  const max = node.data.maxLoops ?? 3;
+  const max = (node.data.maxLoops ?? 3) + (st.extra ?? 0);
   if (st.runs >= max) {
     st.status = 'error';
     st.error = `Bước "${node.data.label}" đã chạy ${st.runs}/${max} lần, dừng để tránh lặp vô hạn.`;
@@ -123,11 +146,13 @@ async function execNode(c: Conversation, run: PipelineRun, node: PNode): Promise
   st.runs++;
   // what this checker demanded last round (Review/Test running again after a fix)
   const lastDemands = node.data.verdict && st.runs > 1 && st.output ? demandsOf(st.output) : '';
+  const passedBefore = node.data.verdict && st.runs > 1 && st.verdict === 'pass';
   st.status = 'running';
   st.error = undefined;
   st.verdict = undefined;
   st.verdictMissing = undefined;
   st.needsInput = undefined;
+  st.stuck = undefined;
   run.current = node.id;
   publish(c);
 
@@ -138,6 +163,7 @@ async function execNode(c: Conversation, run: PipelineRun, node: PNode): Promise
   if (/\{\{\s*task\s*\}\}/i.test(template)) prompt += skills.note;
   prompt += retryFeedback(run, node, cfg);
   if (lastDemands) prompt += recheckInstruction(lastDemands);
+  else if (passedBefore) prompt += REGRESSION_CHECK;
   if (node.data.verdict) prompt += VERDICT_INSTRUCTION;
 
   const { turn, result } = await executeTurn(c, { prompt, config: cfg, roleName, roleIcon, nodeId: node.id, nodeLabel: node.data.label });
@@ -164,7 +190,14 @@ async function execNode(c: Conversation, run: PipelineRun, node: PNode): Promise
     else if (v) st.verdict = v;
     else st.verdictMissing = true;
   }
-  if (node.data.approval || st.verdictMissing || st.needsInput) {
+  // fixes not converging: ask the user instead of burning quota on another round
+  if (st.verdict === 'fail') {
+    const now = demandsOf(st.output);
+    if (lastDemands && now && overlap(lastDemands, now) > 0.6)
+      st.stuck = 'Lần chấm này nêu lại gần như đúng các ý lần trước: bước sửa chưa xử lý được. Chạy thêm vòng nữa nhiều khả năng chỉ tốn quota.';
+    else if (st.runs > AUTO_FIX_ROUNDS) st.stuck = `Đã sửa ${st.runs - 1} vòng mà vẫn chưa đạt.`;
+  }
+  if (node.data.approval || st.verdictMissing || st.needsInput || st.stuck) {
     st.status = 'awaiting';
     run.status = 'awaiting';
   } else {
@@ -242,6 +275,9 @@ export function approve(c: Conversation, opts: { output?: string; verdict?: 'pas
   }
   if (opts.note?.trim()) addNote(c, `💬 Ghi chú của người dùng sau bước "${node.data.label}":\n${opts.note}`, node);
   if (opts.verdict) st.verdict = opts.verdict;
+  // "keep fixing" after a pause: one more round for every step, so the loop limit does not stop it right away
+  if (st.stuck && st.verdict === 'fail') for (const x of Object.values(run.nodes)) x.extra = (x.extra ?? 0) + 1;
+  st.stuck = undefined;
   if (node.data.verdict && !st.verdict) st.verdict = 'pass';
   st.status = 'done';
   st.verdictMissing = undefined;

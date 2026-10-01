@@ -2,6 +2,11 @@
 
 Mỗi phiên bản liệt kê những gì thay đổi. Dòng bắt đầu bằng **Mới:**, **Cải tiến:** hoặc **Sửa lỗi:** để app hiện nhãn tương ứng trong hộp thoại Cập nhật. Khi ra bản mới, thêm mục `## [x.y.z]` ở đầu danh sách, GitHub Actions lấy đúng mục đó làm nội dung Release.
 
+## [0.6.7] - 2026-10-01
+
+- Cải tiến: Pipeline đỡ tốn quota: bước review nêu đủ mọi lỗi chặn ngay lần đầu, lần chấm lại chỉ kiểm tra các ý cũ hoặc phần mới đổi; sau 2 vòng sửa chưa đạt (hoặc lỗi cũ lặp lại) pipeline tạm dừng hỏi bạn thay vì chạy tiếp
+- Sửa lỗi: Danh sách chọn model, effort… mở lần đầu không còn bị tụt xuống đè lên nút
+
 ## [0.6.6] - 2026-10-01
 
 - Mới: Đổi model, effort hay agent lúc agent đang chạy thì app tự dừng lượt đó và làm tiếp trong cùng session với cấu hình mới (đếm ngược vài giây, có thể chọn để lượt sau)

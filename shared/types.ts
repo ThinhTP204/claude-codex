@@ -119,6 +119,10 @@ export interface NodeRunState {
   verdictMissing?: boolean;
   /** agent answered VERDICT: ASK, a question only the user can settle */
   needsInput?: boolean;
+  /** fixing rounds are not converging: paused for the user instead of looping again (why) */
+  stuck?: string;
+  /** extra runs the user allowed after a pause */
+  extra?: number;
 }
 
 export interface PipelineRun {

@@ -342,6 +342,11 @@ export function ApprovalCard({ conv, run, compact }: { conv: Conversation; run: 
           {node.data.label} cần một quyết định mà agent không tự chốt được (mục <b>Câu hỏi</b> ở trên). Gõ câu trả lời vào ô ghi chú bên dưới rồi chọn: gửi lại cho bước trước làm theo, hoặc đi tiếp luôn.
         </div>
       )}
+      {st.stuck && awaiting && (
+        <div className="mt-2 rounded-lg bg-warn/10 px-2.5 py-1.5 text-[12.5px] text-fg/85">
+          <b>Tạm dừng để đỡ tốn quota.</b> {st.stuck} Anh xem các ý còn lại bên dưới rồi chọn: <b>Đạt</b> để đi tiếp, <b>Chưa đạt</b> để cho sửa thêm một vòng (có thể ghi chú hướng sửa), hoặc dừng pipeline.
+        </div>
+      )}
       {awaiting && <ReviewSummary text={st.output || ''} turnId={st.turnId} />}
       {st.error && <div className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap rounded-lg bg-err/5 px-2.5 py-1.5 text-[12.5px] text-err">{st.error}</div>}
 
