@@ -2,6 +2,12 @@
 
 Mỗi phiên bản liệt kê những gì thay đổi. Dòng bắt đầu bằng **Mới:**, **Cải tiến:** hoặc **Sửa lỗi:** để app hiện nhãn tương ứng trong hộp thoại Cập nhật. Khi ra bản mới, thêm mục `## [x.y.z]` ở đầu danh sách, GitHub Actions lấy đúng mục đó làm nội dung Release.
 
+## [0.7.0] - 2026-10-01
+
+- Mới: Bảng Tasks dạng Kanban (mục Tasks ở sidebar): Việc cần làm, Đang chạy, Chờ duyệt, Lỗi / tạm dừng, Xong; mỗi thẻ cho thấy giai đoạn (Plan, Review, bước 2/4…), agent, model và việc đang làm
+- Mới: Ghi task trước rồi kéo sang Đang chạy để giao cho một vai trò hoặc pipeline; kéo sang Xong để cất đi (thẻ cũ hơn 3 ngày tự ẩn)
+- Sửa lỗi: Dừng pipeline lúc đang chờ duyệt không còn để bước đó ở trạng thái "Chờ bạn duyệt"
+
 ## [0.6.7] - 2026-10-01
 
 - Cải tiến: Pipeline đỡ tốn quota: bước review nêu đủ mọi lỗi chặn ngay lần đầu, lần chấm lại chỉ kiểm tra các ý cũ hoặc phần mới đổi; sau 2 vòng sửa chưa đạt (hoặc lỗi cũ lặp lại) pipeline tạm dừng hỏi bạn thay vì chạy tiếp

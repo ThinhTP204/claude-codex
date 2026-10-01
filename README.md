@@ -27,6 +27,7 @@ Giao diện gồm ba cột:
   - Có giới hạn số vòng lặp để không đốt quota.
   - Sơ đồ cập nhật trực tiếp khi pipeline chạy.
 - **Danh sách session như Orca.** Session đang chạy nằm trên cùng, kèm nhánh git, agent đang làm gì ("Đang sửa Sidebar.tsx", "Đang chạy npm test") và thời gian. Pipeline và các agent chạy song song mở ra thành từng dòng. Agent xong, lỗi hoặc chờ duyệt thì có chấm báo chưa xem và thông báo của hệ điều hành khi anh đang ở cửa sổ khác.
+- **Bảng Tasks (Kanban).** Mục Tasks ở sidebar mở bảng các cột Việc cần làm / Đang chạy / Chờ duyệt / Lỗi / Xong. Mỗi session là một thẻ ghi rõ đang ở giai đoạn nào (🧭 Plan, 🔍 Review, bước 2/4…), agent và model nào, đang làm gì. Ghi task trước rồi kéo sang Đang chạy để giao cho một vai trò hoặc pipeline; kéo sang Xong để cất đi.
 - **Chạy song song nhiều agent.** Giao cùng một task cho 2–5 agent (Claude, Codex, Antigravity, model nào cũng được). Mỗi agent làm trên một bản sao riêng của project (git worktree), xong thì so sánh thay đổi và chọn một bản để đưa vào project.
 - **Đọc lại session cũ.** Hiện cả session tạo bằng Claude Code hay Codex ngoài app (đọc từ `~/.claude` và `~/.codex`), mở ra xem và chat tiếp được.
 - **Explorer giống VS Code.** Màu git (M/U/D), file bị `.gitignore` hiện mờ, file agent vừa sửa có chấm cam. Mở file bằng Monaco (editor của VS Code), xem diff với HEAD, sửa và lưu bằng ⌘S.

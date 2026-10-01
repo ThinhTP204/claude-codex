@@ -1,12 +1,13 @@
 import { useSyncExternalStore } from 'react';
 import type { CheckResult } from '../../shared/diagnostics.ts';
-import type { Block, Catalog, Conversation, ConversationSummary, GitInfo, Health, Pipeline, Role, RunConfig, ServerMessage, TermInfo, UsageReport } from '../../shared/types.ts';
+import type { BacklogTask, Block, Catalog, Conversation, ConversationSummary, GitInfo, Health, Pipeline, Role, RunConfig, ServerMessage, TermInfo, UsageReport } from '../../shared/types.ts';
 import { disposeTerm, ensureTerm, focusTerm, setTermHooks, writeTerm } from './terminals.ts';
 import { api, connectWs, qs, TOKEN, URL_PROJECT, wsSend } from './api.ts';
 
 export type Tab =
   | { id: string; kind: 'chat' }
   | { id: string; kind: 'flow' }
+  | { id: string; kind: 'tasks' }
   | { id: string; kind: 'preview'; url: string }
   /** root: a workspace folder other than the project (undefined = the project itself) */
   | { id: string; kind: 'file'; path: string; root?: string; diff?: boolean; line?: number; nonce?: number };
@@ -94,6 +95,8 @@ export interface State {
   notify: boolean;
   /** review comments on code lines, waiting to be sent to an agent */
   notes: LineNote[];
+  /** task board: tasks written down but not started */
+  backlog: BacklogTask[];
 }
 
 /** A comment on lines of a file (or of its git HEAD version in a diff), for the agent. */
@@ -159,6 +162,7 @@ let state: State = {
   tabs: [
     { id: 'chat', kind: 'chat' },
     { id: 'flow', kind: 'flow' },
+    { id: 'tasks', kind: 'tasks' },
   ],
   activeTab: 'chat',
   composer: LS.get<RunConfig>('composer', { agent: 'claude', model: 'sonnet', effort: 'medium', permission: 'write' }),
@@ -188,6 +192,7 @@ let state: State = {
   unread: LS.get<Record<string, number>>('unread', {}),
   notify: LS.get('notify', true),
   notes: [],
+  backlog: [],
 };
 
 const listeners = new Set<() => void>();
@@ -385,6 +390,7 @@ export async function openProject(path: string): Promise<void> {
   void loadWorkspace(r.path);
   void loadCheckers();
   void loadTerms();
+  void loadBacklog();
   const last = LS.get<string | undefined>(`conv:${r.path}`, undefined);
   if (last) void openConv(last);
 }
@@ -642,6 +648,53 @@ export function sendNotes(): void {
   insertIntoComposer(`Nhận xét của tôi về code, hãy sửa theo từng ý:\n\n${parts.join('\n\n')}\n`);
   clearNotes();
   toast(`Đã đưa ${notes.length} nhận xét vào ô chat. Chọn agent rồi gửi.`, 'info');
+}
+
+// ---------------- task board ----------------
+
+export async function loadBacklog(): Promise<void> {
+  const project = state.project;
+  if (!project) return;
+  const l = await safe(api<BacklogTask[]>('GET', `/tasks${qs({ project })}`));
+  if (l && project === state.project) setState({ backlog: l });
+}
+
+export async function addBacklog(title: string, note?: string): Promise<void> {
+  const l = await safe(api<BacklogTask[]>('POST', `/tasks${qs({ project: state.project })}`, { title, note }));
+  if (l) setState({ backlog: l });
+}
+
+export async function updateBacklog(id: string, o: { title?: string; note?: string }): Promise<void> {
+  const l = await safe(api<BacklogTask[]>('PATCH', `/tasks/${id}${qs({ project: state.project })}`, o));
+  if (l) setState({ backlog: l });
+}
+
+export async function removeBacklog(id: string): Promise<void> {
+  const l = await safe(api<BacklogTask[]>('DELETE', `/tasks/${id}${qs({ project: state.project })}`));
+  if (l) setState({ backlog: l });
+}
+
+/** Hand a written-down task to an agent (a role) or a pipeline, in a new session. */
+export async function startBacklog(task: BacklogTask, how: { role?: Role; pipeline?: Pipeline }): Promise<boolean> {
+  const project = state.project;
+  if (!project) return false;
+  const c = await safe(api<Conversation>('POST', `/conversations${qs({ project })}`));
+  if (!c) return false;
+  const text = task.note ? `${task.title}\n\n${task.note}` : task.title;
+  const path = `/conversations/${encodeURIComponent(c.id)}`;
+  const ok = how.pipeline
+    ? await safe(api('POST', `${path}/run${qs({ project })}`, { pipeline: how.pipeline, task: text }))
+    : await safe(api('POST', `${path}/send${qs({ project })}`, { text, config: how.role?.config ?? state.composer, roleName: how.role?.name, roleIcon: how.role?.icon }));
+  if (!ok) return false;
+  await removeBacklog(task.id);
+  void refreshList();
+  return true;
+}
+
+/** Move a session in or out of the board's "Xong" column. */
+export async function setConvDone(id: string, done: boolean): Promise<void> {
+  await safe(api('PATCH', `/conversations/${encodeURIComponent(id)}${qs({ project: state.project })}`, { done }));
+  void refreshList();
 }
 
 /** Put text into the chat composer and switch to the chat tab. */

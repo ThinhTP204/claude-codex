@@ -157,6 +157,7 @@ export function QuickOpen({ initial, onClose, toggleSidebar, showRight }: QuickO
       },
       { key: 'files', icon: <Command size={14} />, label: 'Mở Explorer', detail: '⇧⌘E', run: done(() => (setRightTab('files'), showRight())) },
       { key: 'scm', icon: <Command size={14} />, label: 'Mở Source Control', run: done(() => (setRightTab('scm'), showRight())) },
+      { key: 'tasks', icon: <Command size={14} />, label: 'Mở bảng Tasks', run: done(() => setState({ activeTab: 'tasks' })) },
       { key: 'flow', icon: <Command size={14} />, label: 'Mở Pipelines', run: done(() => setState({ activeTab: 'flow' })) },
       { key: 'roles', icon: <Command size={14} />, label: 'Vai trò & model', run: done(() => setState({ showRoles: true })) },
       { key: 'sidebar', icon: <Command size={14} />, label: 'Bật/tắt sidebar', detail: '⌘B', run: done(toggleSidebar) },

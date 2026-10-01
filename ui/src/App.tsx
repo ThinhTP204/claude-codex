@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { AlertTriangle, CopyX, Globe, XCircle, MessageSquare, PanelLeftOpen, PanelRightOpen, SquareTerminal, Workflow, X } from 'lucide-react';
+import { AlertTriangle, CopyX, Globe, XCircle, MessageSquare, PanelLeftOpen, PanelRightOpen, SquareKanban, SquareTerminal, Workflow, X } from 'lucide-react';
 import { closeTab, closeTabs, LS, setBottomTab, newConv, setState, toggleTermPanel, useStore } from './store.ts';
 import { TerminalPanel } from './components/TerminalPanel.tsx';
 import { PreviewView } from './components/PreviewView.tsx';
@@ -18,6 +18,7 @@ import { cx, Spinner } from './components/ui.tsx';
 // Monaco and React Flow are heavy: load them only when their tab opens
 import { MEDIA_RE, MediaView } from './components/MediaView.tsx';
 const FileView = lazy(() => import('./components/FileView.tsx').then((m) => ({ default: m.FileView })));
+const TaskBoard = lazy(() => import('./components/TaskBoard.tsx').then((m) => ({ default: m.TaskBoard })));
 const FlowView = lazy(() => import('./components/FlowView.tsx').then((m) => ({ default: m.FlowView })));
 
 function useWidth(key: string, initial: number) {
@@ -273,6 +274,9 @@ export function App() {
               } else if (t.kind === 'flow') {
                 icon = <Workflow size={14} />;
                 label = 'Flow';
+              } else if (t.kind === 'tasks') {
+                icon = <SquareKanban size={14} />;
+                label = 'Tasks';
               } else if (t.kind === 'preview') {
                 icon = <Globe size={14} className="text-ok" />;
                 label = `Preview · ${t.url.replace(/^https?:\/\//, '')}`;
@@ -352,7 +356,7 @@ export function App() {
                 <ChatView />
               ) : (
                 <Suspense fallback={<div className="grid h-full place-items-center"><Spinner /></div>}>
-                  {t.kind === 'flow' ? flowSeen ? <FlowView /> : null : t.kind === 'preview' ? <PreviewView url={t.url} /> : MEDIA_RE.test(t.path) ? <MediaView path={t.path} root={t.root} /> : <FileView path={t.path} root={t.root} diff={t.diff} line={t.line} nonce={t.nonce} />}
+                  {t.kind === 'flow' ? flowSeen ? <FlowView /> : null : t.kind === 'tasks' ? t.id === activeTab ? <TaskBoard /> : null : t.kind === 'preview' ? <PreviewView url={t.url} /> : MEDIA_RE.test(t.path) ? <MediaView path={t.path} root={t.root} /> : <FileView path={t.path} root={t.root} diff={t.diff} line={t.line} nonce={t.nonce} />}
                 </Suspense>
               )}
             </div>

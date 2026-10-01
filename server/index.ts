@@ -17,6 +17,7 @@ import { spawn } from 'node:child_process';
 import { GitError, gitBranches, gitCheckout, gitCommit, gitDiffForMessage, gitDiscard, gitFetch, gitInfo, gitInit, gitLog, gitPull, gitPush, gitStage, gitUnstage } from './git.ts';
 import { createTerm, killTerm, listTerms, resizeTerm, setTermBroadcast, writeTerm, listProfiles, listPorts, renameTerm, stopPort, type NewTerm } from './terminals.ts';
 import { startRun } from './runner.ts';
+import { addTask, listTasks, removeTask, updateTask } from './tasks.ts';
 import { dropClient, setClientView, setNotifyBroadcast } from './notify.ts';
 import {
   createConv,
@@ -27,7 +28,7 @@ import {
   isRunning,
   anyRunning,
   listConvs,
-  renameConv,
+  updateConv,
   setBroadcast,
   stopConv,
 } from './conversations.ts';
@@ -356,12 +357,20 @@ export function start(opts: StartOptions): Promise<http.Server> {
     if (m === 'GET' && p === '/git/status') return gitStatus(project());
     if (m === 'GET' && p === '/git/repos') return projectRepos(project());
 
+    // ---- task board: tasks written down before an agent gets them ----
+    if (m === 'GET' && p === '/tasks') return listTasks(project());
+    if (m === 'POST' && p === '/tasks') return addTask(project(), await body<{ title: string; note?: string }>(req));
+    if ((mm = /^\/tasks\/([\w-]+)$/.exec(p))) {
+      if (m === 'PATCH') return updateTask(project(), mm[1], await body<{ title?: string; note?: string }>(req));
+      if (m === 'DELETE') return removeTask(project(), mm[1]);
+    }
+
     // ---- conversations ----
     if (m === 'GET' && p === '/conversations') return listConvs(project());
     if (m === 'POST' && p === '/conversations') return createConv(project());
     if ((mm = /^\/conversations\/([^/]+)$/.exec(p))) {
       if (m === 'GET') return conv(mm[1]);
-      if (m === 'PATCH') return renameConv(conv(mm[1]).id, (await body<{ title: string }>(req)).title);
+      if (m === 'PATCH') return updateConv(conv(mm[1]).id, await body<{ title?: string; done?: boolean }>(req));
       if (m === 'DELETE') {
         deleteConv(conv(mm[1]).id);
         return { ok: true };

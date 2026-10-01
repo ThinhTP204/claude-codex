@@ -311,6 +311,9 @@ export function stopPipeline(c: Conversation): void {
     return;
   }
   if (run.status === 'awaiting' || run.status === 'error') {
+    // the step that was waiting is no longer waiting
+    const cur = run.current ? run.nodes[run.current] : undefined;
+    if (cur?.status === 'awaiting') cur.status = 'stopped';
     run.status = 'stopped';
     run.endedAt = Date.now();
     saveConv(c, true);

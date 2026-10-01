@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlarmClock, Bell, BellOff, ChevronDown, ChevronRight, Circle, CircleAlert, CircleCheck, CircleStop, MessageSquare, GitBranch, Hand, Monitor, Moon, MoreHorizontal, PanelLeftClose, Sun, Pencil, Plus, RefreshCw, Search, Trash2, Users, Workflow } from 'lucide-react';
+import { AlarmClock, SquareKanban, Bell, BellOff, ChevronDown, ChevronRight, Circle, CircleAlert, CircleCheck, CircleStop, MessageSquare, GitBranch, Hand, Monitor, Moon, MoreHorizontal, PanelLeftClose, Sun, Pencil, Plus, RefreshCw, Search, Trash2, Users, Workflow } from 'lucide-react';
 import type { Agent, ConversationSummary, SessionLane } from '../../../shared/types.ts';
 import { api, qs } from '../api.ts';
 import { getState, newConv, openConv, refreshList, safe, setNotify, setState, useStore } from '../store.ts';
@@ -107,6 +107,10 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }) {
       </nav>
 
       <div className="space-y-0.5 border-t border-line px-2 py-2">
+        <button type="button" onClick={() => setState({ activeTab: 'tasks' })} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] text-muted hover:bg-hover hover:text-fg">
+          <SquareKanban size={15} /> Tasks
+          <TaskCounts />
+        </button>
         <button type="button" onClick={() => setState({ activeTab: 'flow' })} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] text-muted hover:bg-hover hover:text-fg">
           <Workflow size={15} /> Pipelines
         </button>
@@ -140,6 +144,19 @@ const elapsed = (ms: number) => {
   return `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}m`;
 };
 const clock = (ts: number) => new Date(ts).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+
+/** Small counters next to "Tasks": running and waiting for you. */
+function TaskCounts() {
+  const list = useStore((s) => s.convList);
+  const running = list.filter((c) => c.status === 'running').length;
+  const waiting = list.filter((c) => c.status === 'awaiting').length;
+  return (
+    <span className="ml-auto flex items-center gap-1 text-[11px] tabular-nums">
+      {running > 0 && <span className="rounded-full bg-accent/15 px-1.5 text-accent" title={`${running} đang chạy`}>{running}</span>}
+      {waiting > 0 && <span className="rounded-full bg-warn/15 px-1.5 text-warn" title={`${waiting} chờ duyệt`}>{waiting}</span>}
+    </span>
+  );
+}
 
 function NotifyButton() {
   const on = useStore((s) => s.notify);

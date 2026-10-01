@@ -179,6 +179,16 @@ export interface Conversation {
   fanouts?: Fanout[];
   /** set on the hidden conversation of one fan-out attempt */
   parentId?: string;
+  /** the user moved it to "Xong" on the task board (cleared when work starts again) */
+  doneAt?: number;
+}
+
+/** A task written down on the board but not given to an agent yet. */
+export interface BacklogTask {
+  id: string;
+  title: string;
+  note?: string;
+  createdAt: number;
 }
 
 export interface FanoutAttempt {
@@ -265,6 +275,9 @@ export interface ConversationSummary {
   lanes?: SessionLane[];
   /** an automatic continue is scheduled at this time */
   autoAt?: number;
+  doneAt?: number;
+  /** what kind of work it is now: the role of the chat, or the pipeline step (with its position) */
+  stage?: { name: string; icon?: string; step?: number; steps?: number };
 }
 
 export interface ModelInfo {

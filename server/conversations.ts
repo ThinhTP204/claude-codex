@@ -4,7 +4,7 @@ import type { Agent, Block, Conversation, ConversationSummary, RunConfig, Server
 import { CONV_DIR, dataFile, readJson, uid, writeJson } from './store.ts';
 import { startRun, type RunHandle, type RunResult } from './runner.ts';
 import { listNativeSessions, nativeTurns } from './sessions.ts';
-import { headBranch, sessionLanes, sessionStatus } from './activity.ts';
+import { headBranch, sessionLanes, sessionStage, sessionStatus } from './activity.ts';
 import { sessionEvent } from './notify.ts';
 
 export const NEW_TITLE = 'Cuộc trò chuyện mới';
@@ -144,6 +144,8 @@ export function summary(c: Conversation): ConversationSummary {
     branch: c.branch,
     lanes: lanes.length ? lanes : undefined,
     autoAt: c.auto?.enabled ? c.auto.pending?.at : undefined,
+    doneAt: c.doneAt,
+    stage: sessionStage(c),
   };
 }
 
@@ -253,10 +255,11 @@ export function deleteConv(id: string): void {
   if (e) broadcast({ type: 'list', projectPath: e.projectPath });
 }
 
-export function renameConv(id: string, title: string): Conversation | undefined {
+export function updateConv(id: string, o: { title?: string; done?: boolean }): Conversation | undefined {
   const c = loadConv(id);
   if (!c) return;
-  c.title = title.slice(0, 120);
+  if (typeof o.title === 'string' && o.title.trim()) c.title = o.title.slice(0, 120);
+  if (o.done !== undefined) c.doneAt = o.done ? Date.now() : undefined;
   saveConv(c);
   publish(c);
   return c;
@@ -341,6 +344,8 @@ export async function executeTurn(c: Conversation, o: TurnOptions): Promise<{ tu
   };
   c.turns.push(userTurn);
   c.branch = headBranch(c.projectPath) ?? c.branch;
+  // working on it again: off the board's "Xong" column
+  c.doneAt = undefined;
   // title: the typed text, without the "📎 Đính kèm:" list the composer appends
   if (c.title === NEW_TITLE) c.title = (o.display ?? o.prompt).split('\n\n📎 ')[0].replace(/\s+/g, ' ').slice(0, 80) || NEW_TITLE;
 

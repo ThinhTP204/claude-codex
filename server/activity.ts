@@ -2,7 +2,8 @@
 // (the chat's running turn or each pipeline step) with its current activity.
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Agent, Block, Conversation, SessionLane, SessionStatus, Turn } from '../shared/types.ts';
+import type { Agent, Block, Conversation, ConversationSummary, SessionLane, SessionStatus, Turn } from '../shared/types.ts';
+import { getRoles } from './roles.ts';
 
 /** Branch checked out in `dir` (read from .git/HEAD, no git process: called on every turn). */
 export function headBranch(dir: string): string | undefined {
@@ -170,4 +171,22 @@ export function sessionLanes(c: Conversation, resolve: (id: string) => Conversat
     });
   }
   return lanes;
+}
+
+/** The kind of work a session is doing: pipeline step (n of m), parallel run, or the chat's role. */
+export function sessionStage(c: Conversation): ConversationSummary['stage'] {
+  const fan = c.fanouts?.at(-1);
+  if (fan && (fan.status === 'running' || fan.status === 'ready')) return { name: 'Chạy song song', icon: '⑂' };
+  const last = c.turns.findLast((t) => t.role === 'assistant');
+  const run = c.run;
+  if (run && (run.status === 'running' || run.status === 'awaiting' || last?.nodeId)) {
+    const steps = run.pipeline.nodes.filter((n) => n.type === 'agent');
+    const id = run.current ?? last?.nodeId;
+    const i = steps.findIndex((n) => n.id === id);
+    const node = steps[i] ?? steps.at(-1);
+    if (!node) return;
+    const role = getRoles().find((r) => r.id === node.data.roleId);
+    return { name: node.data.label, icon: role?.icon, step: i >= 0 ? i + 1 : steps.length, steps: steps.length };
+  }
+  if (last?.roleName) return { name: last.roleName, icon: last.roleIcon };
 }
