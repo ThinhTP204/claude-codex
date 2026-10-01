@@ -2,6 +2,10 @@
 
 Mỗi phiên bản liệt kê những gì thay đổi. Dòng bắt đầu bằng **Mới:**, **Cải tiến:** hoặc **Sửa lỗi:** để app hiện nhãn tương ứng trong hộp thoại Cập nhật. Khi ra bản mới, thêm mục `## [x.y.z]` ở đầu danh sách, GitHub Actions lấy đúng mục đó làm nội dung Release.
 
+## [0.6.2] - 2026-10-01
+
+- Sửa lỗi: Thông báo của macOS hiện tiếng Việt bị lỗi font (chữ có dấu thành ký tự lạ)
+
 ## [0.6.1] - 2026-10-01
 
 - Sửa lỗi: Model mới của Codex (GPT-6.1-Sol, GPT-6-Astra…) hiện ngay khi CLI cập nhật danh sách, không cần tải lại cửa sổ

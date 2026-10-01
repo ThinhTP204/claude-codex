@@ -28,12 +28,14 @@ export function sessionEvent(c: Conversation, kind: keyof typeof KIND_TITLE, tex
 }
 
 function osNotify(title: string, body: string): void {
-  // text goes through the environment, never into the script itself
+  // text never goes into the script itself: environment on Windows, arguments on macOS
   const env = { ...process.env, AD_TITLE: title, AD_BODY: body };
   const opts = { env, stdio: 'ignore' as const, windowsHide: true, detached: false };
   let child;
   if (process.platform === 'darwin') {
-    child = spawn('osascript', ['-e', 'display notification (system attribute "AD_BODY") with title "AgentDesk" subtitle (system attribute "AD_TITLE") sound name "Glass"'], opts);
+    // text as arguments: AppleScript reads argv as UTF-8 (environment variables come out as MacRoman)
+    const script = ['on run argv', 'display notification (item 2 of argv) with title "AgentDesk" subtitle (item 1 of argv) sound name "Glass"', 'end run'];
+    child = spawn('osascript', [...script.flatMap((l) => ['-e', l]), title, body], opts);
   } else if (process.platform === 'win32') {
     const ps = [
       '[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null',
