@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import type { CheckResult } from '../../shared/diagnostics.ts';
 import type { Block, Catalog, Conversation, ConversationSummary, GitInfo, Health, Pipeline, Role, RunConfig, ServerMessage, TermInfo, UsageReport } from '../../shared/types.ts';
-import { disposeTerm, ensureTerm, setLinkHandler, writeTerm } from './terminals.ts';
+import { disposeTerm, ensureTerm, focusTerm, setTermHooks, writeTerm } from './terminals.ts';
 import { api, connectWs, qs, TOKEN, URL_PROJECT, wsSend } from './api.ts';
 
 export type Tab =
@@ -76,11 +76,21 @@ export interface State {
   /** checkers detected per folder, known before anything runs */
   checkers: { dir: string; tools: string[] }[];
   /** what the bottom panel shows */
-  bottomTab: 'terminal' | 'problems';
+  bottomTab: BottomTab;
+  /** bottom panel fills the editor area (VS Code's "Maximize Panel") */
+  termMax: boolean;
+  /** command running in each terminal (shell integration), shown as its tab title */
+  termCmd: Record<string, string>;
+  /** menu of a command's circle in the terminal gutter */
+  termMenu?: { id: string; index: number; x: number; y: number };
+  /** find bar open in this terminal */
+  termFind?: string;
   /** newer AgentDesk on GitHub (git installs) */
   update?: UpdateInfo;
   showUpdate: boolean;
 }
+
+export type BottomTab = 'terminal' | 'problems' | 'ports';
 
 export interface UpdateInfo {
   supported: boolean;
@@ -149,7 +159,9 @@ let state: State = {
   showUpdate: false,
   checking: false,
   checkers: [],
-  bottomTab: LS.get<'terminal' | 'problems'>('bottomTab', 'terminal'),
+  bottomTab: LS.get<BottomTab>('bottomTab', 'terminal'),
+  termMax: false,
+  termCmd: {},
   terms: [],
 };
 
@@ -470,13 +482,35 @@ async function loadTerms(): Promise<void> {
   setState({ terms: list.map(({ buffer: _b, ...t }) => t), activeTerm: list[list.length - 1]?.id });
 }
 
-export async function newTerm(): Promise<void> {
+export interface NewTermOptions {
+  /** shell program (from the + menu) */
+  shell?: string;
+  /** open next to the active terminal (split) */
+  split?: boolean;
+  /** run right away, e.g. a package.json script */
+  command?: string;
+  title?: string;
+}
+
+export async function newTerm(o: NewTermOptions = {}): Promise<void> {
   if (!state.project) return;
-  const t = await safe(api<TermInfo>('POST', `/terms${qs({ project: state.project })}`, { cols: 100, rows: 24 }));
+  const group = o.split ? state.terms.find((t) => t.id === state.activeTerm)?.group : undefined;
+  const t = await safe(api<TermInfo>('POST', `/terms${qs({ project: state.project })}`, { cols: 100, rows: 24, shell: o.shell, group, command: o.command, title: o.title }));
   if (!t) return;
   ensureTerm(t.id, '', t.pty);
-  setState((s) => ({ terms: [...s.terms, t], activeTerm: t.id, termOpen: true }));
+  setState((s) => ({ terms: [...s.terms, t], activeTerm: t.id, termOpen: true, bottomTab: 'terminal' }));
   LS.set('termOpen', true);
+  LS.set('bottomTab', 'terminal');
+}
+
+export async function renameTerm(id: string, title: string): Promise<void> {
+  if (!title.trim()) return;
+  const t = await safe(api<TermInfo>('PATCH', `/terms/${encodeURIComponent(id)}${qs({ project: state.project })}`, { title }));
+  if (t && 'id' in t) setState((s) => ({ terms: s.terms.map((x) => (x.id === t.id ? t : x)) }));
+}
+
+export function toggleTermMax(max = !state.termMax): void {
+  setState({ termMax: max, termOpen: max || state.termOpen });
 }
 
 export async function closeTerm(id: string): Promise<void> {
@@ -501,7 +535,29 @@ export function ensurePreview(url: string, focus: boolean): void {
 }
 
 // localhost links clicked inside the terminal open in the Preview tab
-setLinkHandler((url) => (URL_RE.test(url) ? ensurePreview(url.replace(/\/\/(0\.0\.0\.0|127\.0\.0\.1|\[::1?\])/, '//localhost'), true) : window.open(url, '_blank')));
+setTermHooks({
+  link: (url) => (URL_RE.test(url) ? ensurePreview(url.replace(/\/\/(0\.0\.0\.0|127\.0\.0\.1|\[::1?\])/, '//localhost'), true) : window.open(url, '_blank')),
+  // "src/a.ts:12" printed by a compiler or test runner opens in the editor
+  file: (ref) => void openFileRef(ref),
+  running: (id, cmd) =>
+    setState((s) => {
+      const termCmd = { ...s.termCmd };
+      if (cmd) termCmd[id] = cmd;
+      else delete termCmd[id];
+      return { termCmd };
+    }),
+  commandMenu: (id, index, x, y) => setState({ termMenu: { id, index, x, y } }),
+  keys: (id, action) => {
+    if (action === 'find') setState({ termFind: id });
+    else if (action === 'split') void newTerm({ split: true });
+    else void newTerm();
+  },
+});
+
+export function activateTerm(id: string): void {
+  setState({ activeTerm: id });
+  requestAnimationFrame(() => focusTerm(id));
+}
 
 /** Hide a finished/stopped pipeline run from the chat (it stays in the Flow tab). */
 export function hideRun(runId: string): void {
@@ -555,7 +611,7 @@ export function checkAfterSave(file: string): void {
   }
 }
 
-export function setBottomTab(tab: 'terminal' | 'problems'): void {
+export function setBottomTab(tab: BottomTab): void {
   LS.set('bottomTab', tab);
   LS.set('termOpen', true);
   setState({ bottomTab: tab, termOpen: true });
@@ -676,9 +732,16 @@ function onMessage(msg: ServerMessage): void {
     case 'term:closed': {
       disposeTerm(msg.id);
       const terms = state.terms.filter((t) => t.id !== msg.id);
-      setState({ terms, activeTerm: state.activeTerm === msg.id ? terms[terms.length - 1]?.id : state.activeTerm });
+      const gone = state.terms.find((t) => t.id === msg.id);
+      // closing one half of a split: stay in that group
+      const next = state.activeTerm === msg.id ? (terms.filter((t) => t.group === gone?.group).pop() ?? terms[terms.length - 1])?.id : state.activeTerm;
+      const { [msg.id]: _, ...termCmd } = state.termCmd;
+      setState({ terms, activeTerm: next, termCmd, termMax: terms.length ? state.termMax : false });
       break;
     }
+    case 'term:info':
+      setState((s) => ({ terms: s.terms.map((t) => (t.id === msg.term.id ? msg.term : t)) }));
+      break;
     case 'conv':
       trackRunning(msg.conv);
       if (msg.conv.id === state.convId) {

@@ -2,6 +2,17 @@
 
 Mỗi phiên bản liệt kê những gì thay đổi. Dòng bắt đầu bằng **Mới:**, **Cải tiến:** hoặc **Sửa lỗi:** để app hiện nhãn tương ứng trong hộp thoại Cập nhật. Khi ra bản mới, thêm mục `## [x.y.z]` ở đầu danh sách, GitHub Actions lấy đúng mục đó làm nội dung Release.
 
+## [0.5.0] - 2026-10-01
+
+- Mới: Terminal giống VS Code: chia đôi, chọn shell (zsh, bash, fish…), chạy script trong package.json, phóng to panel, đổi tên terminal
+- Mới: Mỗi lệnh trong terminal có chấm xanh (xong) hoặc đỏ (lỗi); bấm vào để chạy lại, copy output hoặc gửi lệnh kèm output cho agent; ⌘↑/⌘↓ nhảy giữa các lệnh
+- Mới: Tìm trong terminal (⌘F), bấm đường dẫn file như src/a.ts:12 để mở trong editor, chuột phải để copy/dán
+- Mới: Tab Ports: các cổng dev server đang mở, xem trong Preview, mở trình duyệt hoặc dừng process
+- Mới: Windows có terminal thật (ConPTY): cls, Tab, màu, vim đều chạy; chọn PowerShell, PowerShell 7, Command Prompt, Git Bash hoặc WSL
+- Mới: Gõ /tên-skill trong task khi chạy pipeline: bước nào cũng dùng đúng skill đó, với cả Claude, Codex và Antigravity
+- Sửa lỗi: Claude CLI cài qua npm không chạy được trên Windows (bản mới dùng claude.exe)
+- Sửa lỗi: Icon app trên Windows không hiện ở shortcut, Start menu và thanh taskbar
+
 ## [0.4.4] - 2026-10-01
 
 - Mới: Kéo file hoặc thư mục trong Explorer thả vào thư mục khác để chuyển chỗ, giống VS Code (rê lên thư mục đóng để mở ra, thả vào chỗ trống để đưa ra thư mục gốc)

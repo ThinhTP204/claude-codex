@@ -15,7 +15,7 @@ import { createPath, deletePath, renamePath, revealPath } from './fileops.ts';
 import { APP_ROOT, applyUpdate, checkUpdate, updateStatus } from './update.ts';
 import { spawn } from 'node:child_process';
 import { GitError, gitBranches, gitCheckout, gitCommit, gitDiffForMessage, gitDiscard, gitFetch, gitInfo, gitInit, gitLog, gitPull, gitPush, gitStage, gitUnstage } from './git.ts';
-import { createTerm, killTerm, listTerms, resizeTerm, setTermBroadcast, writeTerm } from './terminals.ts';
+import { createTerm, killTerm, listTerms, resizeTerm, setTermBroadcast, writeTerm, listProfiles, listPorts, renameTerm, stopPort, type NewTerm } from './terminals.ts';
 import { startRun } from './runner.ts';
 import {
   createConv,
@@ -68,6 +68,7 @@ const MIME: Record<string, string> = {
   '.pdf': 'application/pdf',
   '.ico': 'image/x-icon',
   '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json',
   '.woff2': 'font/woff2',
   '.ttf': 'font/ttf',
 };
@@ -261,10 +262,11 @@ export function start(opts: StartOptions): Promise<http.Server> {
 
     // ---- terminals (keystrokes and resizes go over the websocket) ----
     if (m === 'GET' && p === '/terms') return listTerms(project());
-    if (m === 'POST' && p === '/terms') {
-      const b = await body<{ cols: number; rows: number }>(req);
-      return createTerm(project(), b.cols, b.rows);
-    }
+    if (m === 'POST' && p === '/terms') return createTerm(project(), await body<NewTerm>(req));
+    if (m === 'GET' && p === '/terms/profiles') return listProfiles(project());
+    if (m === 'GET' && p === '/terms/ports') return listPorts(project());
+    if (m === 'POST' && p === '/terms/ports/stop') return stopPort(project(), Number((await body<{ pid: number }>(req)).pid)).then(() => ({ ok: true }));
+    if (m === 'PATCH' && (mm = /^\/terms\/([^/]+)$/.exec(p))) return renameTerm(mm[1], String((await body<{ title: string }>(req)).title || '')) ?? { ok: false };
     if (m === 'DELETE' && (mm = /^\/terms\/([^/]+)$/.exec(p))) {
       killTerm(mm[1]);
       return { ok: true };

@@ -1,4 +1,5 @@
 import type { Conversation, PNode, Pipeline, PipelineRun, RunConfig, Turn } from '../shared/types.ts';
+import { pipelineSkills } from './commands.ts';
 import { executeTurn, finalText, isRunning, publish, saveConv, stopConv } from './conversations.ts';
 import { getRoles } from './roles.ts';
 import { uid } from './store.ts';
@@ -83,10 +84,10 @@ function targets(run: PipelineRun, fromId: string): string[] {
     .map((e) => e.target);
 }
 
-function render(run: PipelineRun, template: string): string {
+function render(run: PipelineRun, template: string, task = run.task): string {
   return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, key: string) => {
     const k = key.toLowerCase();
-    if (k === 'task') return run.task;
+    if (k === 'task') return task;
     if (k === 'prev') return (run.prevNode && run.nodes[run.prevNode]?.output) || '';
     const n = run.pipeline.nodes.find((n) => n.data.label.toLowerCase() === k || n.id === key);
     return (n && run.nodes[n.id]?.output) || '';
@@ -130,7 +131,10 @@ async function execNode(c: Conversation, run: PipelineRun, node: PNode): Promise
   publish(c);
 
   const { cfg, template, roleName, roleIcon } = nodeConfig(node);
-  let prompt = render(run, template);
+  // "/skill" in the task: spelled out so every step (and every agent) really uses it
+  const skills = pipelineSkills(run.task, c.projectPath);
+  let prompt = render(run, template, skills.task);
+  if (/\{\{\s*task\s*\}\}/i.test(template)) prompt += skills.note;
   prompt += retryFeedback(run, node, cfg);
   if (lastDemands) prompt += recheckInstruction(lastDemands);
   if (node.data.verdict) prompt += VERDICT_INSTRUCTION;

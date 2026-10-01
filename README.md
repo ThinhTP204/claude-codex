@@ -73,7 +73,7 @@ Không có Xcode Command Line Tools thì app mở bằng Chrome/Edge/Brave ở c
 - Chạy được, app mở bằng **Microsoft Edge** (Windows có sẵn) hoặc Chrome ở chế độ `--app`.
 - Cài Claude Code / Codex bằng npm hay bằng bộ cài `.exe` đều được.
 - Trên Windows, **Mở thư mục** dùng trình chọn thư mục có sẵn trong app (danh sách ổ đĩa C:, D:… và thư mục). Trên Linux dùng hộp thoại `zenity`, không có thì tự chuyển sang trình chọn trong app.
-- Terminal trên Windows chạy PowerShell ở **chế độ cơ bản**: gõ lệnh rồi Enter, Ctrl+C sẽ khởi động lại shell. Các chương trình toàn màn hình như `vim` không chạy được trong chế độ này.
+- Terminal trên Windows là terminal thật (ConPTY, cần Windows 10 1809 trở lên): PowerShell, PowerShell 7, Command Prompt, Git Bash hoặc WSL; `cls`, Tab, màu, `vim` đều chạy. Lần đầu mở terminal, app tự dựng một chương trình nhỏ bằng trình biên dịch C# có sẵn của Windows (vài giây). Windows cũ hơn thì dùng chế độ cơ bản: gõ lệnh rồi Enter.
 
 ## Cài đặt
 
@@ -138,6 +138,7 @@ Bấm ô **PROJECT → Đổi** ở góc trên sidebar trái, hoặc nhấn **�
 3. Mỗi câu trả lời có header ghi rõ `Claude · Sonnet 5 · Medium · Code`, kèm các tool call (bấm để xem input/output), phần suy nghĩ, thời gian và số token.
 4. **Đổi agent giữa chừng:** ví dụ hỏi Claude trước rồi chuyển sang Codex. Codex tự nhận những gì Claude đã làm.
 5. **Tự tiếp tục khi hết quota:** bấm nút ⟳ cạnh ô chat. Agent hoặc pipeline dừng vì hết quota 5 giờ hay lỗi tạm thời thì app chờ tới lúc quota hồi rồi tự gửi `continue`. Có thể đặt thêm mốc giờ kiểm tra (vd 05:00, 10:00) và giới hạn số lần. Cần để app mở; trong lúc chờ, app giữ máy không ngủ.
+6. **Lệnh và skill:** gõ `/` trong ô chat để chọn lệnh hoặc skill của Claude, Codex, Antigravity (cả skill cài trong project). Khi chạy pipeline, `/tên-skill` trong task được chuyển thành lời dặn rõ ràng cho từng bước, nên bước nào cũng dùng đúng skill đó.
 
 ### 3. Chạy pipeline
 
@@ -179,6 +180,11 @@ Số liệu tự làm mới khi mở app, mỗi 5 phút, và sau mỗi lượt c
 - Mở/đóng panel Terminal: **⌃`** hoặc **⌘J**, hoặc nút terminal ở góc phải thanh tab. Kéo mép trên để đổi chiều cao.
 - Mỗi terminal là một shell thật (zsh/bash của anh, có đủ PATH, nvm, alias…) mở sẵn trong thư mục project. Gõ gì cũng được: `npm run dev`, `git status`, `vim`, `htop`. **Ctrl+C** để dừng lệnh.
 - **+** để mở thêm terminal. Tải lại cửa sổ thì terminal vẫn còn, lịch sử được hiện lại. Đóng app thì mọi terminal và dev server trong đó tắt theo, không chiếm port.
+- Mũi tên cạnh **+**: chọn shell (zsh, bash, fish…) hoặc chạy một script trong `package.json` ở terminal mới. Bấm đúp vào tên terminal để đổi tên.
+- **Chia đôi** (⌘\\): hai terminal cạnh nhau. Nút ⤢ phóng to panel chiếm cả vùng editor.
+- Mỗi lệnh có một chấm bên trái: xanh là chạy xong, đỏ là lỗi. Bấm vào chấm để chạy lại, copy lệnh, copy output, hoặc gửi lệnh kèm output cho agent. **⌘↑ / ⌘↓** nhảy giữa các lệnh (zsh và bash).
+- **⌘F** tìm trong terminal, **⌘K** xoá màn hình, chuột phải để copy/dán. Đường dẫn file kiểu `src/a.ts:12` trong output bấm được, mở thẳng trong editor.
+- Tab **Ports**: các cổng mà dev server trong terminal đang mở, bấm để xem trong Preview, mở trình duyệt hoặc dừng process.
 - Chạy dev server xong, app tự nhận ra địa chỉ kiểu `http://localhost:3000` và thêm tab **Preview** để xem trang ngay trong app. Bấm link localhost trong terminal cũng mở Preview.
 - **Gửi cho agent:** gửi đoạn anh đang bôi đen (hoặc 60 dòng cuối) vào ô chat, rồi hỏi Claude/Codex vì sao lỗi.
 

@@ -442,3 +442,38 @@ html.page-hidden *::after {
 .monaco-editor .line-flash {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
+
+/* Terminal: a gutter for the command circles (shell integration), like VS Code */
+.term-host .xterm {
+  padding-left: 16px;
+}
+.term-host .xterm-screen {
+  overflow: visible;
+}
+.term-cmd-mark {
+  cursor: pointer;
+  pointer-events: auto;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+}
+.term-cmd-mark::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--faint);
+}
+.term-cmd-mark.ok::before {
+  border-color: var(--ansi-blue);
+  background: var(--ansi-blue);
+  opacity: 0.85;
+}
+.term-cmd-mark.err::before {
+  border-color: var(--err);
+  background: var(--err);
+}
+.term-cmd-mark:hover::before {
+  transform: scale(1.35);
+}

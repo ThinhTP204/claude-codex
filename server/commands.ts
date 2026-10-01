@@ -207,3 +207,80 @@ export function agySkillFile(project: string, name: string): string | undefined 
   }
   return undefined;
 }
+
+/** <dir>/<name>/SKILL.md, <dir>/<name>.md (flat), or a skill folder whose frontmatter `name:` matches. */
+function skillIn(dir: string, name: string): string | undefined {
+  for (const f of [path.join(dir, name, 'SKILL.md'), path.join(dir, `${name}.md`)]) if (fs.existsSync(f)) return f;
+  try {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const f = path.join(dir, e.name, 'SKILL.md');
+      if (e.isDirectory() && fs.existsSync(f) && frontmatter(f).name === name) return f;
+    }
+  } catch {
+    /* missing dir */
+  }
+  return undefined;
+}
+
+/**
+ * A skill or custom command any agent could use in this project, by name: the file holding its
+ * instructions, or none for Claude plugin skills (known from the "/" menu, loaded by Claude itself).
+ */
+export function findSkill(project: string, name: string): { kind: 'skill' | 'command'; file?: string } | undefined {
+  if (!/^[\w][\w:.-]*$/.test(name)) return undefined;
+  const home = os.homedir();
+  const roots = [project, ...nestedRepos(project).map((r) => path.join(project, r))];
+  const skillDirs = [
+    ...roots.flatMap((r) => [path.join(r, '.claude', 'skills'), path.join(r, '.agents', 'skills'), path.join(r, '.codex', 'skills')]),
+    path.join(home, '.claude', 'skills'),
+    path.join(home, '.codex', 'skills'),
+    path.join(home, '.agents', 'skills'),
+  ];
+  for (const d of skillDirs) {
+    const f = skillIn(d, name);
+    if (f) return { kind: 'skill', file: f };
+  }
+  const agy = agySkillFile(project, name);
+  if (agy) return { kind: 'skill', file: agy };
+  // Claude custom commands: .claude/commands/a/b.md is "/a:b"
+  const rel = `${name.split(':').join('/')}.md`;
+  for (const d of [...roots.map((r) => path.join(r, '.claude', 'commands')), path.join(home, '.claude', 'commands')]) {
+    if (fs.existsSync(path.join(d, rel))) return { kind: 'command', file: path.join(d, rel) };
+  }
+  const known = cache.get(`claude:${project}`)?.items.find((i) => i.name === name && i.kind !== 'builtin');
+  return known ? { kind: known.kind === 'command' ? 'command' : 'skill' } : undefined;
+}
+
+/**
+ * Pipeline steps wrap the task in their own prompt, so a "/skill" typed in the task is no longer at
+ * the start where a CLI would treat it as a command. Take out every "/name" that is a real skill
+ * here and spell it out instead, for whichever agent runs the step.
+ */
+export function pipelineSkills(task: string, project: string): { task: string; note: string } {
+  const found = new Map<string, { kind: 'skill' | 'command'; file?: string }>();
+  const look = (raw: string) => {
+    const name = raw.replace(/[.:]+$/, '');
+    const s = findSkill(project, name);
+    if (s) found.set(name, s);
+    return s && { name, s };
+  };
+  // leading "/a /b rest" (as typed from the "/" menu): drop them, the note below says what to use
+  let text = task.trimStart();
+  for (let m; (m = /^\/([\w][\w:.-]*)(?=$|\s)/.exec(text)) && look(m[1]); ) text = text.slice(m[0].length).trimStart();
+  // "/name" standing alone mid-sentence (not a path like /api/users or a URL): keep it readable
+  text = text.replace(/(^|\s)\/([\w][\w:.-]*?)(?=[.:]*(?:$|\s|[,;!?)]))/g, (all, pre: string, raw: string) => {
+    const hit = look(raw);
+    return hit ? `${pre}${hit.s.kind === 'command' ? `lệnh "/${hit.name}"` : `skill "${hit.name}"`}` : all;
+  });
+  if (!found.size) return { task, note: '' };
+  const where = (f: string) => {
+    const rel = path.relative(project, f);
+    return !rel.startsWith('..') && !path.isAbsolute(rel) ? rel : f.startsWith(os.homedir()) ? `~${f.slice(os.homedir().length)}` : f;
+  };
+  const lines = [...found].map(([name, s]) =>
+    s.kind === 'command'
+      ? `- Làm theo lệnh "/${name}"${s.file ? ` (nội dung ở ${where(s.file)})` : ''}.`
+      : `- Dùng skill "${name}"${s.file ? ` (đọc hướng dẫn ở ${where(s.file)})` : ''}.`,
+  );
+  return { task: text.trim() || '(làm theo skill bên dưới)', note: `\n\nNgười dùng chỉ định cho việc này:\n${lines.join('\n')}` };
+}

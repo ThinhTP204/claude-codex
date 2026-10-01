@@ -1,0 +1,21 @@
+# Windows-only behaviour (ConPTY terminal, npm-installed CLIs) checked on a real Windows machine.
+name: Windows smoke test
+
+on:
+  push:
+    branches: [main]
+    paths: ['server/**', 'scripts/smoke-windows.mjs', '.github/workflows/windows-smoke.yml']
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm install -g @anthropic-ai/claude-code @openai/codex
+      - run: node scripts/smoke-windows.mjs

@@ -143,6 +143,7 @@ export function App() {
   const [rightOpen, setRightOpen] = useWidth('rightOpen', 1);
   const [termH, setTermH] = useWidth('termH', 280);
   const termOpen = useStore((s) => s.termOpen);
+  const termMax = useStore((s) => s.termMax);
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; id: string }>();
   const openFileTabs = tabs.filter((t) => t.kind === 'file' || t.kind === 'preview').length;
   useEffect(() => {
@@ -336,7 +337,7 @@ export function App() {
             </button>
           )}
         </div>
-        <div className="relative min-h-0 flex-1">
+        <div className={cx('relative min-h-0 flex-1', termOpen && termMax && 'hidden')}>
           {tabs.map((t) => (
             <div key={t.id} className={cx('absolute inset-0', t.id !== activeTab && 'hidden')}>
               {t.kind === 'chat' ? (
@@ -351,8 +352,8 @@ export function App() {
         </div>
         {termOpen && (
           <>
-            <DragHandle axis="y" value={termH} onChange={setTermH} min={120} max={Math.max(160, window.innerHeight - 200)} sign={-1} reset={280} />
-            <div style={{ height: termH }} className="shrink-0 border-t border-line">
+            {!termMax && <DragHandle axis="y" value={termH} onChange={setTermH} min={120} max={Math.max(160, window.innerHeight - 200)} sign={-1} reset={280} />}
+            <div style={termMax ? undefined : { height: termH }} className={cx('border-t border-line', termMax ? 'min-h-0 flex-1' : 'shrink-0')}>
               <TerminalPanel />
             </div>
           </>

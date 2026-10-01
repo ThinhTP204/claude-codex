@@ -322,6 +322,25 @@ export interface TermInfo {
   /** false = "basic" mode (Windows): no PTY, the UI echoes and edits the input line */
   pty: boolean;
   createdAt: number;
+  /** terminals split side by side share a group (the id of the first one) */
+  group: string;
+  /** folder it was opened in, when not the project root */
+  cwd?: string;
+}
+
+export interface TermProfiles {
+  shells: { name: string; path: string; default?: boolean }[];
+  /** package.json scripts, with the command for the project's package manager */
+  scripts: { name: string; cmd: string; run: string }[];
+}
+
+export interface TermPort {
+  port: number;
+  pid: number;
+  process: string;
+  host: string;
+  termId: string;
+  termTitle: string;
 }
 
 export type ServerMessage =
@@ -331,4 +350,5 @@ export type ServerMessage =
   | { type: 'fs'; root: string; paths: string[] }
   | { type: 'term:data'; id: string; data: string }
   | { type: 'term:exit'; id: string; code?: number }
-  | { type: 'term:closed'; id: string };
+  | { type: 'term:closed'; id: string }
+  | { type: 'term:info'; term: TermInfo };

@@ -5,7 +5,7 @@ AgentDesk uses this instead of a native Node PTY module (nothing to compile):
   stdout <- terminal output (raw bytes, ANSI included)
   fd 3   <- control lines: "<cols> <rows>\\n" to resize
 
-usage: python3 pty_host.py <cols> <rows>
+usage: python3 pty_host.py <cols> <rows> [command...]   (default: $SHELL -l)
 """
 import fcntl
 import os
@@ -18,10 +18,11 @@ import termios
 
 cols, rows = int(sys.argv[1]), int(sys.argv[2])
 shell = os.environ.get("SHELL") or "/bin/zsh"
+argv = sys.argv[3:] or [shell, "-l"]
 
 pid, master = pty.fork()
 if pid == 0:
-    os.execvp(shell, [shell, "-l"])
+    os.execvp(argv[0], argv)
 
 
 def set_size(c, r):
