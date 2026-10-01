@@ -552,7 +552,7 @@ function Composer({ autoFocus }: { autoFocus?: boolean }) {
     <div>
       <div
         className={cx(
-          'relative rounded-2xl border border-line-strong/70 bg-raised shadow-sm focus-within:border-line-strong focus-within:shadow-md',
+          '@container/composer relative rounded-2xl border border-line-strong/70 bg-raised shadow-sm focus-within:border-line-strong focus-within:shadow-md',
           dragging && 'border-accent ring-2 ring-accent/30',
         )}
         onDragOver={(e) => {
@@ -628,7 +628,7 @@ function Composer({ autoFocus }: { autoFocus?: boolean }) {
                   title="Chạy pipeline với nội dung ô chat làm task"
                   className={cx('inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-2.5 text-[13px] text-muted hover:bg-hover hover:text-fg disabled:opacity-40', open && 'bg-hover')}
                 >
-                  <Workflow size={14} /> Pipeline
+                  <Workflow size={14} /> <span className="@max-3xl/composer:hidden">Pipeline</span>
                 </button>
               )}
             >

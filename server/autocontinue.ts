@@ -185,14 +185,30 @@ async function tick() {
   }
 }
 
-// keep the Mac awake while something is booked (sleeping would miss it)
+// keep the machine awake while something is booked (sleeping would miss it); the helper dies with us
+const WIN_AWAKE = (pid: number) =>
+  `$t = Add-Type -MemberDefinition '[DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint f);' -Name P -Namespace W -PassThru; ` +
+  `$null = $t::SetThreadExecutionState(0x80000001); Wait-Process -Id ${pid}`;
+
+function awakeHelper(): [string, string[]] | undefined {
+  const pid = String(process.pid);
+  if (process.platform === 'darwin') return ['caffeinate', ['-i', '-w', pid]];
+  if (process.platform === 'win32') return ['powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', WIN_AWAKE(process.pid)]];
+  if (process.platform === 'linux') return ['systemd-inhibit', ['--what=idle:sleep', '--who=AgentDesk', '--why=Chờ tự tiếp tục', 'tail', `--pid=${pid}`, '-f', '/dev/null']];
+}
+
 let awake: ChildProcess | undefined;
 function syncAwake() {
-  if (process.platform !== 'darwin') return;
   const need = Object.keys(reg).some((id) => getConv(id, reg[id])?.auto?.pending);
   if (need && !awake) {
-    awake = spawn('caffeinate', ['-i', '-w', String(process.pid)], { stdio: 'ignore' });
-    awake.on('exit', () => (awake = undefined));
+    const h = awakeHelper();
+    if (!h) return;
+    const p = spawn(h[0], h[1], { stdio: 'ignore', windowsHide: true });
+    awake = p;
+    p.on('error', () => {}); // no helper on this machine: just don't keep it awake
+    p.on('exit', () => {
+      if (awake === p) awake = undefined;
+    });
   } else if (!need && awake) {
     awake.kill();
     awake = undefined;

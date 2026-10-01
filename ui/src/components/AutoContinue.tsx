@@ -52,12 +52,12 @@ export function AutoContinueButton() {
           <div>
             <Toggle checked={on} onChange={(enabled) => void update({ enabled })} label={<span className="font-medium">Tự tiếp tục</span>} />
             <p className="mt-1 text-[12px] leading-snug text-muted">
-              Khi agent (hoặc pipeline) dừng vì <b>hết quota</b> hay <b>lỗi tạm thời</b>, app chờ tới lúc quota hồi rồi gửi <code>continue</code>. Dừng vì lý do khác thì không làm gì.
+              Agent hoặc pipeline dừng vì <b>hết quota</b> hay <b>lỗi tạm thời</b> thì app đợi quota hồi rồi tự gửi <code>continue</code>. Lỗi khác thì app không tự chạy.
             </p>
           </div>
 
           <label className="flex items-center justify-between gap-2">
-            <span className="text-muted">Tối đa mỗi lần giao việc</span>
+            <span className="text-muted">Tự chạy tối đa</span>
             <select
               className="rounded-md border border-line bg-panel px-2 py-1 text-[12.5px]"
               value={a?.maxTries ?? 5}
@@ -72,7 +72,7 @@ export function AutoContinueButton() {
           </label>
 
           <div>
-            <div className="mb-1 text-muted">Kiểm tra theo giờ</div>
+            <div className="mb-1 text-muted">Mốc giờ kiểm tra</div>
             <div className="flex flex-wrap gap-1.5">
               {(a?.schedule ?? []).map((t) => (
                 <span key={t} className="inline-flex items-center gap-1 rounded-full border border-line bg-panel px-2 py-0.5 font-mono text-[12px]">
@@ -94,14 +94,14 @@ export function AutoContinueButton() {
                 </button>
               </span>
             </div>
-            <p className="mt-1 text-[11.5px] leading-snug text-faint">Đến mốc: nếu việc đang dở thì chạy tiếp, xong rồi hoặc đang chờ duyệt thì bỏ qua.</p>
+            <p className="mt-1 text-[11.5px] leading-snug text-faint">Đến giờ, việc còn dở sẽ chạy tiếp. Việc đã xong hoặc đang chờ duyệt thì bỏ qua.</p>
             <div className="mt-1.5">
               <Toggle
                 checked={!!a?.prime}
                 onChange={(prime) => void update({ prime })}
-                label={<span className="text-[12.5px]">Mồi quota ở các mốc khi không có việc dở</span>}
+                label={<span className="text-[12.5px]">Bắt đầu chu kỳ quota ở các mốc</span>}
               />
-              <p className="mt-0.5 text-[11.5px] leading-snug text-faint">Gửi một tin rất ngắn để chu kỳ 5 giờ bắt đầu sớm, quota reset đúng lúc bạn bắt đầu làm.</p>
+              <p className="mt-0.5 text-[11.5px] leading-snug text-faint">Không có việc dở thì app gửi một tin ngắn để chu kỳ 5 giờ bắt đầu từ mốc đó. Quota sẽ hồi sớm hơn.</p>
             </div>
           </div>
 
@@ -117,7 +117,7 @@ export function AutoContinueButton() {
               </ul>
             </div>
           )}
-          <p className="text-[11.5px] leading-snug text-faint">Cần để app mở; trên Mac, app giữ máy không ngủ khi đang có lịch chờ.</p>
+          <p className="text-[11.5px] leading-snug text-faint">Cần để app mở. Trong lúc chờ, app giữ máy không ngủ.</p>
         </div>
       )}
     </Popover>

@@ -2,6 +2,12 @@
 
 Mỗi phiên bản liệt kê những gì thay đổi. Dòng bắt đầu bằng **Mới:**, **Cải tiến:** hoặc **Sửa lỗi:** để app hiện nhãn tương ứng trong hộp thoại Cập nhật. Khi ra bản mới, thêm mục `## [x.y.z]` ở đầu danh sách, GitHub Actions lấy đúng mục đó làm nội dung Release.
 
+## [0.4.1] - 2026-10-01
+
+- Cải tiến: Windows cũng được giữ không ngủ trong lúc chờ tự tiếp tục (trước chỉ có Mac)
+- Cải tiến: Chữ trong bảng Tự tiếp tục ngắn gọn, dễ hiểu hơn
+- Sửa lỗi: Thanh công cụ dưới ô chat không còn rớt dòng khi khung chat hẹp; nút tự rút gọn chỉ còn icon
+
 ## [0.4.0] - 2026-10-01
 
 - Mới: Tự tiếp tục: khi agent hoặc pipeline dừng vì hết quota (hay lỗi mạng, máy chủ quá tải), app chờ đúng lúc quota hồi rồi tự gửi continue (pipeline thì chạy tiếp từ bước đang dở); bật ở nút ⟳ cạnh ô chat

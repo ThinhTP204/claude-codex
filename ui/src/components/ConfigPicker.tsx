@@ -52,7 +52,7 @@ export function ConfigPicker({
             )}
           >
             <AgentIcon agent={a} size={13} />
-            {!compact && AGENT_NAME[a]}
+            {!compact && <span className="@max-3xl/composer:hidden">{AGENT_NAME[a]}</span>}
           </button>
         ))}
       </div>
@@ -98,7 +98,7 @@ export function ConfigPicker({
         display={
           <>
             <Shield size={13} className={cx(value.permission === 'full' && 'text-err', value.permission === 'read' && 'text-ok')} />
-            <span>{compact ? perm?.short : perm?.label}</span>
+            <span className="@max-xl/composer:hidden">{compact ? perm?.short : perm?.label}</span>
           </>
         }
       />
