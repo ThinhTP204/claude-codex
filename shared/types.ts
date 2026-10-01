@@ -232,13 +232,18 @@ export interface SessionLane {
   /** a pipeline step, or one of several agents running the same task in parallel */
   kind: 'step' | 'agent';
   agent: Agent;
-  /** step name, role or model */
-  label: string;
+  model?: string;
+  /** pipeline step name */
+  label?: string;
   status: NodeStatus;
   /** what it is doing right now, e.g. "Đang sửa Sidebar.tsx" */
   activity?: string;
+  /** start of its last answer (when it is not running) */
+  text?: string;
   startedAt?: number;
   durationMs?: number;
+  /** when it last finished */
+  endedAt?: number;
 }
 
 export interface ConversationSummary {

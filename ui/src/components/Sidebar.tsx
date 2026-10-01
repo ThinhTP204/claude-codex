@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlarmClock, Bell, BellOff, ChevronRight, CircleAlert, GitBranch, Hand, Monitor, Moon, MoreHorizontal, PanelLeftClose, Sun, Pencil, Plus, RefreshCw, Search, Trash2, Users, Workflow } from 'lucide-react';
+import { AlarmClock, Bell, BellOff, ChevronDown, ChevronRight, Circle, CircleAlert, CircleCheck, CircleStop, MessageSquare, GitBranch, Hand, Monitor, Moon, MoreHorizontal, PanelLeftClose, Sun, Pencil, Plus, RefreshCw, Search, Trash2, Users, Workflow } from 'lucide-react';
 import type { Agent, ConversationSummary, SessionLane } from '../../../shared/types.ts';
 import { api, qs } from '../api.ts';
 import { getState, newConv, openConv, refreshList, safe, setNotify, setState, useStore } from '../store.ts';
@@ -155,35 +155,53 @@ function NotifyButton() {
   );
 }
 
+/** Left of the session name: what the session as a whole is doing. */
 function StatusMark({ c, unread }: { c: ConversationSummary; unread: boolean }) {
-  if (c.status === 'running') return <Spinner size={12} className="shrink-0 text-accent" />;
-  if (c.status === 'awaiting') return <Hand size={12} className="shrink-0 text-warn" aria-label="Chờ bạn duyệt" />;
-  if (c.autoAt) return <AlarmClock size={12} className="shrink-0 text-accent" aria-label={`Tự tiếp tục lúc ${clock(c.autoAt)}`} />;
-  if (c.status === 'error') return <CircleAlert size={12} className={cx('shrink-0 text-err', !unread && 'opacity-60')} aria-label="Gặp lỗi" />;
-  if (unread) return <span className="mx-[3px] h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-label="Có kết quả mới" />;
-  return null;
+  if (c.status === 'running') return <Spinner size={12} className="text-accent" />;
+  if (c.status === 'awaiting') return <Hand size={12} className="text-warn" aria-label="Chờ bạn duyệt" />;
+  if (c.autoAt) return <AlarmClock size={12} className="text-accent" aria-label={`Tự tiếp tục lúc ${clock(c.autoAt)}`} />;
+  if (c.status === 'error') return <CircleAlert size={12} className={cx('text-err', !unread && 'opacity-60')} aria-label="Gặp lỗi" />;
+  if (unread) return <span className="h-2 w-2 rounded-full bg-accent" aria-label="Có kết quả mới" />;
+  return <MessageSquare size={12} className="text-faint/70" />;
 }
 
+const ago = (ts: number) => {
+  const m = Math.floor((Date.now() - ts) / 60_000);
+  if (m < 1) return 'vừa xong';
+  if (m < 60) return `${m} phút`;
+  if (m < 1440) return `${Math.floor(m / 60)} giờ`;
+  return `${Math.floor(m / 1440)} ngày`;
+};
+
+function LaneStatus({ status }: { status: SessionLane['status'] }) {
+  if (status === 'running') return <Spinner size={11} className="text-accent" />;
+  if (status === 'awaiting') return <Hand size={11} className="text-warn" />;
+  if (status === 'error') return <CircleAlert size={11} className="text-err" />;
+  if (status === 'done') return <CircleCheck size={11} className="text-ok" />;
+  if (status === 'stopped') return <CircleStop size={11} className="text-faint" />;
+  return <Circle size={11} className="text-faint/60" />;
+}
+
+/** One agent (or pipeline step) inside a session: status, AI, model, time, then what it does / said. */
 function LaneRow({ lane, now }: { lane: SessionLane; now: number }) {
   const catalog = useStore((s) => s.catalog);
-  // model ids read better as names; pipeline step names pass through unchanged
-  const label = modelLabel(catalog, lane.agent, lane.label) || lane.label;
-  const time = lane.status === 'running' && lane.startedAt ? elapsed(now - lane.startedAt) : lane.durationMs ? elapsed(lane.durationMs) : '';
+  const model = modelLabel(catalog, lane.agent, lane.model) || AGENT_NAME[lane.agent];
+  const time = lane.status === 'running' && lane.startedAt ? elapsed(now - lane.startedAt) : lane.endedAt ? ago(lane.endedAt) : lane.durationMs ? elapsed(lane.durationMs) : '';
+  const line = lane.activity ?? lane.text ?? (lane.status === 'idle' ? 'Chưa chạy' : lane.status === 'stopped' ? 'Đã dừng' : undefined);
   return (
-    <div className={cx('flex items-center gap-1.5 py-[3px] pl-1 pr-1 text-[12px]', lane.status === 'idle' && 'opacity-50')} title={`${AGENT_NAME[lane.agent]}${label ? ` · ${label}` : ''}${lane.activity ? `\n${lane.activity}` : ''}`}>
-      <AgentIcon agent={lane.agent} size={12} />
-      {label && <span className="max-w-[45%] shrink-0 truncate text-muted">{label}</span>}
-      <span className="min-w-0 flex-1 truncate text-faint">
-        {lane.activity ?? (lane.status === 'running' ? 'Đang làm việc' : lane.status === 'done' ? 'Xong' : lane.status === 'error' ? 'Lỗi' : lane.status === 'stopped' ? 'Đã dừng' : lane.status === 'idle' ? 'Chưa chạy' : '')}
-      </span>
-      {time && <span className="shrink-0 tabular-nums text-faint">{time}</span>}
-      {lane.status === 'running' ? (
-        <Spinner size={10} className="shrink-0 text-accent" />
-      ) : lane.status === 'awaiting' ? (
-        <Hand size={10} className="shrink-0 text-warn" />
-      ) : lane.status === 'error' ? (
-        <CircleAlert size={10} className="shrink-0 text-err" />
-      ) : null}
+    <div className={cx('rounded-md px-1.5 py-1', lane.status === 'idle' && 'opacity-55')} title={`${AGENT_NAME[lane.agent]} · ${model}${line ? `\n${line}` : ''}`}>
+      <div className="flex items-center gap-1.5 text-[12.5px]">
+        <span className="grid w-3 shrink-0 place-items-center">
+          <LaneStatus status={lane.status} />
+        </span>
+        <AgentIcon agent={lane.agent} size={13} />
+        <span className="min-w-0 flex-1 truncate font-medium">
+          {lane.label && <span className="text-muted">{lane.label} · </span>}
+          {model}
+        </span>
+        {time && <span className="shrink-0 text-[11px] tabular-nums text-faint">{time}</span>}
+      </div>
+      {line && <div className={cx('mt-0.5 truncate pl-[38px] text-[12px]', lane.status === 'error' ? 'text-err/80' : lane.activity ? 'text-muted' : 'text-faint')}>{line}</div>}
     </div>
   );
 }
@@ -197,10 +215,9 @@ function SessionItem({ c, active }: { c: ConversationSummary; active: boolean })
   const lanes = c.lanes || [];
   const running = c.status === 'running';
   const [open, setOpen] = useState<boolean | undefined>(undefined);
-  // a pipeline at work opens by itself; the user's choice wins after that
-  const expanded = lanes.length > 0 && (open ?? (running && lanes.length > 1));
+  // sessions at work, the open one and unseen results show their agents; the user's choice wins after that
+  const expanded = lanes.length > 0 && (open ?? (isLive(c) || active || unread));
   const now = useNow(running);
-  const solo = lanes.length === 1 && running ? lanes[0] : undefined;
 
   const rename = async () => {
     setEditing(false);
@@ -216,74 +233,56 @@ function SessionItem({ c, active }: { c: ConversationSummary; active: boolean })
     void refreshList();
   };
 
-  const sub = [
-    solo && [AGENT_NAME[solo.agent], modelLabel(catalog, solo.agent, solo.label), solo.activity].filter(Boolean).join(' · '),
-    c.status === 'awaiting' && !solo ? 'Chờ bạn duyệt' : undefined,
-    c.autoAt && c.status !== 'running' ? `Tự tiếp tục lúc ${clock(c.autoAt)}` : undefined,
-    c.status === 'error' && !c.autoAt ? 'Gặp lỗi' : undefined,
-  ].filter(Boolean)[0];
+  const isStep = lanes[0]?.kind === 'step';
 
   return (
     <div className={cx('group rounded-lg', active ? 'bg-active' : 'hover:bg-hover')}>
-      <div
-        className="relative flex cursor-pointer items-start gap-2 px-2.5 py-1.5"
-        onClick={() => !editing && void openConv(c.id)}
-        title={`${c.title}\n${c.models.map((m) => modelLabel(catalog, undefined, m)).join(', ')}`}
-      >
-        <span className="mt-[3px] flex shrink-0 -space-x-1">
-          {(c.agents.length ? c.agents : lanes.length ? [lanes[0].agent] : ['claude' as Agent]).map((a) => (
-            <span key={a} className={cx('rounded-full p-px', active ? 'bg-active' : 'bg-sidebar')}>
-              <AgentIcon agent={a} size={13} />
-            </span>
-          ))}
+      <div className="relative flex cursor-pointer items-start gap-2 px-2.5 py-1.5" onClick={() => !editing && void openConv(c.id)} title={c.title}>
+        <span className="mt-[3px] grid h-3.5 w-3 shrink-0 place-items-center">
+          <StatusMark c={c} unread={unread} />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            {editing ? (
-              <input
-                autoFocus
-                value={title}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => setTitle(e.target.value)}
-                onBlur={rename}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void rename();
-                  if (e.key === 'Escape') setEditing(false);
-                }}
-                className="min-w-0 flex-1 rounded border border-line bg-panel px-1 text-[13px] outline-none"
-              />
-            ) : (
-              <span className={cx('min-w-0 flex-1 truncate text-[13px]', unread && 'font-semibold')}>{c.title}</span>
-            )}
-            {solo?.startedAt && <span className="shrink-0 text-[11px] tabular-nums text-faint">{elapsed(now - solo.startedAt)}</span>}
-            <StatusMark c={c} unread={unread} />
-          </div>
-          {(c.branch || sub || lanes.length > 1) && (
+          {editing ? (
+            <input
+              autoFocus
+              value={title}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={rename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void rename();
+                if (e.key === 'Escape') setEditing(false);
+              }}
+              className="w-full rounded border border-line bg-panel px-1 text-[13px] outline-none"
+            />
+          ) : (
+            <div className={cx('truncate text-[13px]', unread && 'font-semibold')}>{c.title}</div>
+          )}
+          {(c.branch || (c.autoAt && !running)) && (
             <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-faint">
-              {lanes.length > 1 && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setOpen(!expanded);
-                  }}
-                  title={expanded ? 'Thu gọn' : 'Xem từng agent'}
-                  className="-ml-1 flex shrink-0 items-center rounded hover:text-fg"
-                >
-                  <ChevronRight size={12} className={cx('transition-transform', expanded && 'rotate-90')} />
-                  {lanes.length} {lanes[0].kind === 'agent' ? 'agent' : 'bước'}
-                </button>
-              )}
-              {sub && <span className={cx('min-w-0 flex-1 truncate', c.status === 'error' && 'text-err/80', c.status === 'awaiting' && 'text-warn')}>{sub}</span>}
               {c.branch && (
-                <span className={cx('flex min-w-0 items-center gap-0.5', sub ? 'ml-auto max-w-[45%] shrink-0 @max-[300px]/side:hidden' : 'shrink')} title={`Nhánh ${c.branch}`}>
+                <span className="flex min-w-0 items-center gap-0.5" title={`Nhánh ${c.branch}`}>
                   <GitBranch size={11} className="shrink-0" />
                   <span className="truncate">{c.branch}</span>
                 </span>
               )}
+              {c.autoAt && !running && <span className="shrink-0 text-accent">Tự tiếp tục lúc {clock(c.autoAt)}</span>}
             </div>
           )}
         </div>
+        {lanes.length > 0 && !expanded && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen(true);
+            }}
+            title={isStep ? 'Xem các bước' : 'Xem agent'}
+            className="mt-px shrink-0 rounded p-0.5 text-faint opacity-0 hover:text-fg group-hover:opacity-100"
+          >
+            <ChevronRight size={14} />
+          </button>
+        )}
         {c.source === 'app' && !editing && (
           <Popover
             placement="bottom-end"
@@ -330,7 +329,15 @@ function SessionItem({ c, active }: { c: ConversationSummary; active: boolean })
         )}
       </div>
       {expanded && (
-        <div className="mb-1 ml-[22px] mr-1.5 border-l border-line pl-1.5">
+        <div className="pb-1 pl-[22px] pr-1.5">
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-1 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-faint hover:text-fg"
+          >
+            <ChevronDown size={11} />
+            {isStep ? 'Bước' : 'Agent'} ({lanes.length})
+          </button>
           {lanes.map((l) => (
             <LaneRow key={l.id} lane={l} now={now} />
           ))}

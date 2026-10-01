@@ -85,20 +85,38 @@ export function sessionStatus(c: Conversation, running: boolean): SessionStatus 
   return 'done';
 }
 
+/** Start of a turn's last text, as one plain line. */
+function excerpt(t: Turn | undefined, n = 140): string | undefined {
+  const b = t?.blocks.findLast((x) => x.type === 'text') as { text: string } | undefined;
+  if (!b) return;
+  const plain = b.text
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/[`*_#>|]/g, '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return plain ? (plain.length > n ? plain.slice(0, n - 1) + '…' : plain) : undefined;
+}
+
+const ended = (t: Turn | undefined) => (t && t.status !== 'running' ? t.createdAt + (t.durationMs ?? 0) : undefined);
+
 export function sessionLanes(c: Conversation, resolve: (id: string) => Conversation | undefined = () => undefined): SessionLane[] {
   const fan = c.fanouts?.at(-1);
   if (fan && (fan.status === 'running' || fan.status === 'ready')) {
     return fan.attempts.map((a) => {
       const turn = a.status === 'running' ? resolve(a.convId)?.turns.findLast((t) => t.role === 'assistant' && t.status === 'running') : undefined;
+      const stat = a.stat ? `${a.stat.files} file · +${a.stat.additions} −${a.stat.deletions}` : undefined;
       return {
         id: a.id,
         kind: 'agent' as const,
         agent: a.config.agent,
-        label: a.config.model,
+        model: a.config.model,
         status: a.status,
-        activity: turn ? turnActivity(turn) : a.status === 'done' && a.stat ? `${a.stat.files} file · +${a.stat.additions} −${a.stat.deletions}` : undefined,
+        activity: turn ? turnActivity(turn) : undefined,
+        text: a.status === 'running' ? undefined : [stat, a.error || a.answer?.replace(/\s+/g, ' ').slice(0, 120)].filter(Boolean).join(' · '),
         startedAt: a.status === 'running' ? a.startedAt : undefined,
         durationMs: a.durationMs,
+        endedAt: a.durationMs ? a.startedAt + a.durationMs : undefined,
       };
     });
   }
@@ -116,15 +134,40 @@ export function sessionLanes(c: Conversation, resolve: (id: string) => Conversat
           id: n.id,
           kind: 'step' as const,
           agent: (turn?.agent ?? n.data.config?.agent ?? 'claude') as Agent,
+          model: turn?.model ?? n.data.config?.model,
           label: n.data.label,
           status,
           activity: status === 'running' && turn?.status === 'running' ? turnActivity(turn) : status === 'awaiting' ? 'Chờ bạn duyệt' : undefined,
+          text: status === 'running' ? undefined : st?.error || excerpt(turn),
           startedAt: status === 'running' ? turn?.createdAt : undefined,
           durationMs: status === 'running' ? undefined : st?.durationMs,
+          endedAt: status === 'running' ? undefined : ended(turn),
         };
       });
   }
-  const t = c.turns.findLast((x) => x.role === 'assistant' && x.status === 'running');
-  if (!t) return [];
-  return [{ id: t.id, kind: 'agent', agent: t.agent ?? 'claude', label: t.model || t.roleName || '', status: 'running', activity: turnActivity(t), startedAt: t.createdAt }];
+  // a chat: the latest answer of each agent/model that took part, newest first
+  const seen = new Set<string>();
+  const lanes: SessionLane[] = [];
+  for (let i = c.turns.length - 1; i >= 0 && lanes.length < 4; i--) {
+    const t = c.turns[i];
+    if (t.role !== 'assistant' || t.nodeId) continue;
+    const key = `${t.agent}:${t.model}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const running = t.status === 'running';
+    const err = t.blocks.findLast((b) => b.type === 'error') as { text: string } | undefined;
+    lanes.push({
+      id: t.id,
+      kind: 'agent',
+      agent: t.agent ?? 'claude',
+      model: t.model,
+      status: t.status,
+      activity: running ? turnActivity(t) : undefined,
+      text: running ? undefined : t.status === 'error' ? err?.text.replace(/\s+/g, ' ').slice(0, 140) || excerpt(t) : excerpt(t),
+      startedAt: running ? t.createdAt : undefined,
+      durationMs: t.durationMs,
+      endedAt: ended(t),
+    });
+  }
+  return lanes;
 }

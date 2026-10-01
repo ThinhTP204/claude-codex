@@ -2,6 +2,10 @@
 
 Mỗi phiên bản liệt kê những gì thay đổi. Dòng bắt đầu bằng **Mới:**, **Cải tiến:** hoặc **Sửa lỗi:** để app hiện nhãn tương ứng trong hộp thoại Cập nhật. Khi ra bản mới, thêm mục `## [x.y.z]` ở đầu danh sách, GitHub Actions lấy đúng mục đó làm nội dung Release.
 
+## [0.6.4] - 2026-10-01
+
+- Cải tiến: Sidebar giống Orca: dòng ngoài là tên session và nhánh; bên trong mục Agent mỗi agent một dòng với icon AI, model, trạng thái, thời gian và việc đang làm hoặc câu trả lời gần nhất
+
 ## [0.6.3] - 2026-10-01
 
 - Sửa lỗi: Session đang chạy hiện ngay agent, model và việc đang làm (vd "Claude · Haiku 4.5 · Đang chạy npm test"), không còn chỉ có vòng xoay
