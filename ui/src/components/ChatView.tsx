@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowUp, Check, ChevronRight, FolderOpen, Pause, Pencil, Play, RotateCcw, Square, ThumbsDown, ThumbsUp, Workflow, X } from 'lucide-react';
 import type { Agent, Conversation, NodeRunState, PipelineRun, RunConfig } from '../../../shared/types.ts';
-import { convAction, ensureConv, getState, hideRun, pickProject, safe, sendMessage, setComposer, setState, toast, useStore } from '../store.ts';
+import { applyComposerNow, convAction, ensureConv, getState, hideRun, pickProject, safe, sendMessage, setComposer, setState, toast, useStore } from '../store.ts';
 import { api, qs } from '../api.ts';
 import { ConfigPicker } from './ConfigPicker.tsx';
 import { useSlashMenu } from './SlashMenu.tsx';
@@ -482,6 +482,8 @@ function Composer({ autoFocus }: { autoFocus?: boolean }) {
   const ta = useRef<HTMLTextAreaElement>(null);
   const running = !!conv?.turns.some((t) => t.status === 'running') || conv?.run?.status === 'running' || !!conv?.fanouts?.some((f) => f.status === 'running');
   const uploading = atts.some((a) => a.uploading);
+  // only a plain chat turn can switch settings mid-run (pipelines / parallel runs use their own)
+  const chatRunning = !!conv?.turns.some((t) => t.status === 'running') && conv?.run?.status !== 'running' && !conv?.fanouts?.some((f) => f.status === 'running');
 
   const addFiles = (files: File[]) => {
     for (const file of files) {
@@ -605,6 +607,7 @@ function Composer({ autoFocus }: { autoFocus?: boolean }) {
             ))}
           </div>
         )}
+        {chatRunning && <ApplyLive composer={composer} />}
         <textarea
           ref={ta}
           rows={1}
@@ -707,6 +710,48 @@ function Composer({ autoFocus }: { autoFocus?: boolean }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Settings changed while the agent runs: after a short countdown, stop the turn and carry on in the
+ * same session with the new settings (a CLI cannot switch model or effort mid-run).
+ */
+function ApplyLive({ composer }: { composer: RunConfig }) {
+  const catalog = useStore((s) => s.catalog);
+  const key = JSON.stringify(composer);
+  // settings the running turn was started with (what is on screen when it started)
+  const [base, setBase] = useState(key);
+  const [left, setLeft] = useState(0);
+  const changed = key !== base;
+  useEffect(() => {
+    if (!changed) return;
+    setLeft(4);
+    const t = setInterval(() => setLeft((n) => n - 1), 1000);
+    return () => clearInterval(t);
+  }, [key, changed]);
+  const apply = async () => {
+    setBase(key);
+    await applyComposerNow();
+  };
+  useEffect(() => {
+    if (changed && left === 0) void apply();
+  }, [left]);
+  if (!changed) return null;
+  const what = [AGENT_NAME[composer.agent], modelLabel(catalog, composer.agent, composer.model), composer.effort && (EFFORT_LABEL[composer.effort] ?? composer.effort)].filter(Boolean).join(' · ');
+  return (
+    <div className="mx-3 mt-3 flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/10 px-3 py-1.5 text-[12.5px]">
+      <RotateCcw size={13} className="shrink-0 text-accent" />
+      <span className="min-w-0 flex-1">
+        Chuyển sang <b>{what}</b>: dừng lượt đang chạy và làm tiếp với cấu hình mới sau {Math.max(left, 0)} giây.
+      </span>
+      <button type="button" onClick={() => void apply()} className="shrink-0 rounded-md bg-accent px-2 py-0.5 font-medium text-white">
+        Áp dụng ngay
+      </button>
+      <button type="button" onClick={() => setBase(key)} className="shrink-0 rounded-md px-2 py-0.5 text-muted hover:bg-hover hover:text-fg">
+        Để lượt sau
+      </button>
     </div>
   );
 }

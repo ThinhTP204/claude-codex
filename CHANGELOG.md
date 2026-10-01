@@ -2,6 +2,12 @@
 
 Mỗi phiên bản liệt kê những gì thay đổi. Dòng bắt đầu bằng **Mới:**, **Cải tiến:** hoặc **Sửa lỗi:** để app hiện nhãn tương ứng trong hộp thoại Cập nhật. Khi ra bản mới, thêm mục `## [x.y.z]` ở đầu danh sách, GitHub Actions lấy đúng mục đó làm nội dung Release.
 
+## [0.6.6] - 2026-10-01
+
+- Mới: Đổi model, effort hay agent lúc agent đang chạy thì app tự dừng lượt đó và làm tiếp trong cùng session với cấu hình mới (đếm ngược vài giây, có thể chọn để lượt sau)
+- Sửa lỗi: Đổi model, effort… khi đang chọn một vai trò (Plan, Code…) giờ được lưu vào vai trò đó, không bị trả về mặc định
+- Cải tiến: Usage hiện phần quota còn lại giống CLI: 100% sau khi reset, giảm dần khi dùng
+
 ## [0.6.5] - 2026-10-01
 
 - Sửa lỗi: Nút "Dùng lượt reset" của Codex bấm không được (hộp xác nhận tự đóng trước khi nhận cú bấm)

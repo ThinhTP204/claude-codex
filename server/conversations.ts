@@ -415,6 +415,26 @@ export async function executeTurn(c: Conversation, o: TurnOptions): Promise<{ tu
   return out;
 }
 
+/**
+ * The user changed model / effort / agent while a turn was running: the CLI cannot switch
+ * mid-run, so stop it and carry on in the same session with the new settings.
+ */
+export async function restartTurn(c: Conversation, config: RunConfig, role: { roleName?: string; roleIcon?: string } = {}) {
+  const h = active.get(c.id);
+  if (!h) throw new Error('Không có lượt nào đang chạy.');
+  h.stop();
+  // let the stopped turn finish saving
+  for (let i = 0; i < 100 && active.has(c.id); i++) await new Promise((r) => setTimeout(r, 100));
+  await new Promise((r) => setTimeout(r, 150));
+  const what = [AGENT_LABEL[config.agent], config.model, config.effort].filter(Boolean).join(' · ');
+  return executeTurn(c, {
+    prompt: 'Tôi vừa đổi cấu hình agent nên lượt trước bị dừng giữa chừng. Làm tiếp đúng việc đang làm dở; phần nào đã xong thì không làm lại.',
+    display: `↻ Chạy tiếp với ${what}`,
+    config,
+    ...role,
+  });
+}
+
 /** Called after every agent turn (the auto-continue scheduler listens). */
 let turnEndHook: (c: Conversation, turn: Turn, result: RunResult) => void = () => {};
 export const setTurnEndHook = (fn: typeof turnEndHook) => (turnEndHook = fn);

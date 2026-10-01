@@ -30,12 +30,15 @@ function fmtLeft(ms?: number): string {
   return h ? `còn ${h}g ${m}p` : `còn ${m}p`;
 }
 
-const barColor = (p: number) => (p >= 90 ? 'bg-err' : p >= 70 ? 'bg-warn' : 'bg-ok');
+const barColor = (used: number) => (used >= 90 ? 'bg-err' : used >= 70 ? 'bg-warn' : 'bg-ok');
+const textColor = (used: number) => (used >= 90 ? 'text-err' : used >= 70 ? 'text-warn' : '');
+/** Shown like the CLIs: what is left, 100% right after a reset, going down as it is used. */
+const left = (used: number) => Math.max(0, Math.min(100, Math.round(100 - used)));
 
-function Bar({ pct, className }: { pct: number; className?: string }) {
+function Bar({ used, className }: { used: number; className?: string }) {
   return (
     <div className={cx('h-1.5 overflow-hidden rounded-full bg-line', className)}>
-      <div className={cx('h-full rounded-full transition-all', barColor(pct))} style={{ width: `${Math.min(100, Math.max(2, pct))}%` }} />
+      <div className={cx('h-full rounded-full transition-all', barColor(used))} style={{ width: `${left(used)}%` }} />
     </div>
   );
 }
@@ -60,12 +63,12 @@ function MiniRow({ agent, u, connected }: { agent: Agent; u?: AgentUsage; connec
       {u?.ok ? (
         <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
           {main.map((w) => (
-            <div key={w.label} className="min-w-0" title={`${w.label}: ${w.usedPercent}% · reset ${fmtReset(w.resetsAt) || w.resetsText || ''}`}>
+            <div key={w.label} className="min-w-0" title={`${w.label}: còn ${left(w.usedPercent)}% · reset ${fmtReset(w.resetsAt) || w.resetsText || ''}`}>
               <div className="flex items-baseline justify-between text-[10.5px] leading-none text-faint">
                 <span>{shortLabel(w.label)}</span>
-                <span className={cx('tabular-nums', w.usedPercent >= 90 ? 'text-err' : w.usedPercent >= 70 ? 'text-warn' : 'text-muted')}>{Math.round(w.usedPercent)}%</span>
+                <span className={cx('tabular-nums', textColor(w.usedPercent) || 'text-muted')}>{left(w.usedPercent)}%</span>
               </div>
-              <Bar pct={w.usedPercent} className="mt-1" />
+              <Bar used={w.usedPercent} className="mt-1" />
             </div>
           ))}
         </div>
@@ -90,9 +93,9 @@ function WindowRow({ w }: { w: UsageWindow }) {
     <div>
       <div className="flex items-baseline justify-between text-[12.5px]">
         <span className="font-medium">{w.label}</span>
-        <span className={cx('tabular-nums font-semibold', w.usedPercent >= 90 ? 'text-err' : w.usedPercent >= 70 ? 'text-warn' : '')}>{Math.round(w.usedPercent)}%</span>
+        <span className={cx('tabular-nums font-semibold', textColor(w.usedPercent))}>còn {left(w.usedPercent)}%</span>
       </div>
-      <Bar pct={w.usedPercent} className="mt-1 h-2" />
+      <Bar used={w.usedPercent} className="mt-1 h-2" />
       <div className="mt-0.5 flex justify-between text-[11px] text-faint">
         <span>Reset {fmtReset(w.resetsAt) || w.resetsText || '—'}</span>
         <span>{fmtLeft(w.resetsAt)}</span>
@@ -121,7 +124,7 @@ function ConfirmReset({ credit, usage, onClose }: { credit: ResetCredit; usage: 
         {peak < 50 && (
           <div className="mt-3 flex gap-2 rounded-lg bg-warn/10 px-3 py-2 text-[12.5px] text-warn">
             <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-            <span>Anh mới dùng tối đa {Math.round(peak)}%. Reset bây giờ khá phí, nên để dành tới lúc gần chạm giới hạn.</span>
+            <span>Quota vẫn còn ít nhất {left(peak)}%. Reset bây giờ khá phí, nên để dành tới lúc gần chạm giới hạn.</span>
           </div>
         )}
         {credit.expiresAt && <div className="mt-2 text-[11.5px] text-faint">Lượt này hết hạn {fmtReset(credit.expiresAt)}.</div>}

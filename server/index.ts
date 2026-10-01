@@ -22,6 +22,7 @@ import {
   createConv,
   deleteConv,
   executeTurn,
+  restartTurn,
   getConv,
   isRunning,
   anyRunning,
@@ -393,7 +394,7 @@ export function start(opts: StartOptions): Promise<http.Server> {
       if (m === 'POST' && mm[3] === 'discard') return discardFanout(c, f.id).then(() => ({ ok: true }));
       if (m === 'POST' && mm[3] === 'stop') return stopFanout(c, f.id), { ok: true };
     }
-    if (m === 'POST' && (mm = /^\/conversations\/([^/]+)\/(send|stop|run|approve|rerun|run-stop)$/.exec(p))) {
+    if (m === 'POST' && (mm = /^\/conversations\/([^/]+)\/(send|stop|restart|run|approve|rerun|run-stop)$/.exec(p))) {
       const c = conv(mm[1]);
       const b = await body<any>(req);
       switch (mm[2]) {
@@ -402,6 +403,12 @@ export function start(opts: StartOptions): Promise<http.Server> {
           userActed(c);
           void executeTurn(c, { prompt: b.text, config: b.config, roleName: b.roleName, roleIcon: b.roleIcon }).catch((e) => console.error(e));
           return { ok: true, id: c.id };
+        case 'restart':
+          if (!isRunning(c.id)) throw new HttpError(409, 'Lượt chạy đã xong, cấu hình mới sẽ dùng cho tin nhắn tiếp theo.');
+          if (c.run?.status === 'running' || runningFanout(c)) throw new HttpError(409, 'Pipeline và chạy song song dùng cấu hình riêng của từng bước, không đổi giữa chừng được.');
+          userActed(c);
+          void restartTurn(c, b.config, { roleName: b.roleName, roleIcon: b.roleIcon }).catch((e) => console.error(e));
+          return { ok: true };
         case 'stop':
           userActed(c);
           if (runningFanout(c)) stopFanout(c);

@@ -434,10 +434,30 @@ export async function ensureConv(): Promise<Conversation | undefined> {
   return c;
 }
 
+let roleSave: ReturnType<typeof setTimeout> | undefined;
 export function setComposer(cfg: RunConfig, roleId?: string): void {
   LS.set('composer', cfg);
   LS.set('roleId', roleId);
   setState({ composer: cfg, roleId });
+  // changing model / effort / … while a role is picked changes that role (chip, next launch, pipelines)
+  const role = roleId ? state.roles.find((r) => r.id === roleId) : undefined;
+  if (role && JSON.stringify(role.config) !== JSON.stringify(cfg)) {
+    const roles = state.roles.map((r) => (r.id === roleId ? { ...r, config: cfg } : r));
+    setState({ roles });
+    clearTimeout(roleSave);
+    roleSave = setTimeout(() => void saveRoles(getState().roles), 600);
+  }
+}
+
+/** Stop the running turn and carry on with the composer's (new) settings. */
+export async function applyComposerNow(): Promise<boolean> {
+  const c = state.conv;
+  if (!c) return false;
+  const role = state.roles.find((r) => r.id === state.roleId);
+  const ok = await safe(
+    api('POST', `/conversations/${encodeURIComponent(c.id)}/restart${qs({ project: state.project })}`, { config: state.composer, roleName: role?.name, roleIcon: role?.icon }),
+  );
+  return !!ok;
 }
 
 export async function sendMessage(text: string): Promise<boolean> {
