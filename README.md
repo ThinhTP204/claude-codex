@@ -26,6 +26,8 @@ Giao diện gồm ba cột:
   - Bước nào cũng có thể bật **dừng chờ duyệt**. Bước review/test có thể chấm **pass/fail** để rẽ nhánh (ví dụ fail thì quay lại Code).
   - Có giới hạn số vòng lặp để không đốt quota.
   - Sơ đồ cập nhật trực tiếp khi pipeline chạy.
+- **Danh sách session như Orca.** Session đang chạy nằm trên cùng, kèm nhánh git, agent đang làm gì ("Đang sửa Sidebar.tsx", "Đang chạy npm test") và thời gian. Pipeline và các agent chạy song song mở ra thành từng dòng. Agent xong, lỗi hoặc chờ duyệt thì có chấm báo chưa xem và thông báo của hệ điều hành khi anh đang ở cửa sổ khác.
+- **Chạy song song nhiều agent.** Giao cùng một task cho 2–5 agent (Claude, Codex, Antigravity, model nào cũng được). Mỗi agent làm trên một bản sao riêng của project (git worktree), xong thì so sánh thay đổi và chọn một bản để đưa vào project.
 - **Đọc lại session cũ.** Hiện cả session tạo bằng Claude Code hay Codex ngoài app (đọc từ `~/.claude` và `~/.codex`), mở ra xem và chat tiếp được.
 - **Explorer giống VS Code.** Màu git (M/U/D), file bị `.gitignore` hiện mờ, file agent vừa sửa có chấm cam. Mở file bằng Monaco (editor của VS Code), xem diff với HEAD, sửa và lưu bằng ⌘S.
 - **Usage và quota.** Xem % đã dùng theo 5 giờ và theo tuần của cả Claude lẫn Codex, giờ reset, và dùng **lượt reset trong bank của Codex** ngay trong app.
@@ -139,6 +141,7 @@ Bấm ô **PROJECT → Đổi** ở góc trên sidebar trái, hoặc nhấn **�
 4. **Đổi agent giữa chừng:** ví dụ hỏi Claude trước rồi chuyển sang Codex. Codex tự nhận những gì Claude đã làm.
 5. **Tự tiếp tục khi hết quota:** bấm nút ⟳ cạnh ô chat. Agent hoặc pipeline dừng vì hết quota 5 giờ hay lỗi tạm thời thì app chờ tới lúc quota hồi rồi tự gửi `continue`. Có thể đặt thêm mốc giờ kiểm tra (vd 05:00, 10:00) và giới hạn số lần. Cần để app mở; trong lúc chờ, app giữ máy không ngủ.
 6. **Lệnh và skill:** gõ `/` trong ô chat để chọn lệnh hoặc skill của Claude, Codex, Antigravity (cả skill cài trong project). Khi chạy pipeline, `/tên-skill` trong task được chuyển thành lời dặn rõ ràng cho từng bước, nên bước nào cũng dùng đúng skill đó.
+7. **Chạy song song:** gõ task rồi bấm **Song song** cạnh nút Pipeline. Chọn 2–5 agent và model, bấm **Chạy**. Mỗi agent làm trên một git worktree riêng (lấy từ commit hiện tại cộng các thay đổi chưa commit), nên không giẫm chân nhau và không đụng vào project. Xong hết thì mỗi bản có số file, số dòng thêm/bớt và câu trả lời. Bấm **Xem thay đổi** để so diff từng file, **Chọn bản này** để đưa thay đổi vào project (thành thay đổi chưa commit, xem lại trong Source Control), hoặc **Bỏ hết**. Các worktree tự được xoá. Project cần dùng git và có ít nhất một commit.
 
 ### 3. Chạy pipeline
 
@@ -195,6 +198,7 @@ Sidebar phải có hai tab: **Explorer** và **Source Control**. Badge trên tab
 - **Nhánh:** bấm tên nhánh để đổi nhánh, hoặc gõ tên mới rồi Enter để **tạo nhánh mới** từ nhánh hiện tại. Nhánh chỉ có trên remote thì bấm để kéo về máy. Cạnh tên nhánh có ↑ (commit chưa push) và ↓ (commit mới trên remote).
 - **Stage:** di chuột vào file rồi bấm **+** / **−**, hoặc stage / bỏ stage cả nhóm. Nút ↺ huỷ thay đổi của file (có hỏi lại, không hoàn tác được).
 - **Xem diff:** bấm vào file để mở editor ở chế độ so sánh với HEAD.
+- **Nhận xét từng dòng cho agent:** trong diff (hoặc editor), di chuột lên dòng rồi bấm dấu **+** cạnh số dòng, hoặc chuột phải → **Nhận xét cho agent**. Chọn nhiều dòng trước để nhận xét cả đoạn. Viết xong bấm ⌘Enter (Windows: Ctrl+Enter). Các nhận xét gom lại ở đầu Source Control; bấm **Gửi** để đưa tất cả vào ô chat (kèm file, số dòng và đoạn code), chọn agent rồi gửi.
 - **Commit:** nhập message rồi bấm **Commit** (⌘Enter). Chưa stage file nào thì app commit **tất cả** thay đổi. Mũi tên cạnh nút có **Commit & Push** (⇧⌘Enter) và **Sửa commit gần nhất** (amend).
 - **Viết bằng AI:** nhờ Claude Haiku (hoặc Codex, theo agent đang chọn ở ô chat) đọc diff và viết commit message. Tốn khoảng 20–30k token.
 - **Push / Pull / Fetch.** Nhánh mới chưa có trên remote thì nút là **Publish nhánh** (tự `push -u`).
@@ -216,6 +220,8 @@ Sidebar phải có hai tab: **Explorer** và **Source Control**. Badge trên tab
 
 | Phím | Tác dụng |
 |---|---|
+| ⌘P | Mở nhanh file hoặc session; gõ `>` để chạy lệnh, `/` để chọn skill, `#` để đổi nhánh git |
+| ⇧⌘P | Danh sách lệnh của app |
 | ⌘N | Cuộc trò chuyện mới |
 | ⌘O | Mở project |
 | ⌘B | Ẩn/hiện sidebar trái |

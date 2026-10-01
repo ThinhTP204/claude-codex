@@ -2,6 +2,15 @@
 
 Mỗi phiên bản liệt kê những gì thay đổi. Dòng bắt đầu bằng **Mới:**, **Cải tiến:** hoặc **Sửa lỗi:** để app hiện nhãn tương ứng trong hộp thoại Cập nhật. Khi ra bản mới, thêm mục `## [x.y.z]` ở đầu danh sách, GitHub Actions lấy đúng mục đó làm nội dung Release.
 
+## [0.6.0] - 2026-10-01
+
+- Mới: Chạy song song: giao cùng task cho 2–5 agent, mỗi agent làm trên một git worktree riêng; so sánh thay đổi từng file rồi chọn một bản đưa vào project
+- Mới: Danh sách session giống Orca: session đang chạy lên đầu, có nhánh git, agent đang làm gì và chạy bao lâu; pipeline và các agent song song mở ra thành từng dòng
+- Mới: Thông báo của hệ điều hành khi agent xong, gặp lỗi hoặc chờ duyệt (lúc anh đang ở cửa sổ khác), kèm chấm báo session có kết quả chưa xem; tắt bật bằng nút chuông
+- Mới: ⌘P mở nhanh file và session; gõ > để chạy lệnh, / để chọn skill, # để đổi nhánh git
+- Mới: Nhận xét từng dòng code trong diff hoặc editor, rồi gửi tất cả cho agent trong một tin nhắn
+- Cải tiến: Icon Claude, Codex (OpenAI) và Antigravity dùng logo chính thức
+
 ## [0.5.0] - 2026-10-01
 
 - Mới: Terminal giống VS Code: chia đôi, chọn shell (zsh, bash, fish…), chạy script trong package.json, phóng to panel, đổi tên terminal

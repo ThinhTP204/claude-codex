@@ -473,3 +473,40 @@ export function watchProject(root: string, onChange: (paths: string[]) => void):
     }
   };
 }
+
+// ---- quick open (⌘P): every file of the project ----
+const MAX_FILES = 50_000;
+
+/** Project-relative paths of all files: git's view (tracked + untracked, minus ignored) for repos, a walk elsewhere. */
+export async function listAllFiles(root: string): Promise<{ files: string[]; truncated: boolean }> {
+  const out: string[] = [];
+  const nested = nestedRepos(root);
+  const repos = [...((await gitPrefix(root)) !== null ? [''] : []), ...nested];
+  for (const rel of repos) {
+    const r = await run('git', ['-C', rel ? path.join(root, rel) : root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], 20000);
+    if (r.code !== 0) continue;
+    for (const f of r.stdout.split('\0')) if (f) out.push(rel ? `${toPosix(rel)}/${f}` : f);
+  }
+  if (!repos.includes('')) {
+    // a plain folder (maybe holding repos): walk what is outside those repos
+    const skip = new Set(nested.map(toPosix));
+    const walk = (rel: string, depth: number) => {
+      if (out.length >= MAX_FILES || depth > 10) return;
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        const p = rel ? `${rel}/${e.name}` : e.name;
+        if (e.isDirectory()) {
+          if (!e.name.startsWith('.') && !HEAVY_DIRS.includes(e.name) && !skip.has(p)) walk(p, depth + 1);
+        } else if (e.isFile() && !ALWAYS_HIDDEN.has(e.name)) out.push(p);
+      }
+    };
+    walk('', 0);
+  }
+  const files = [...new Set(out)];
+  return { files: files.slice(0, MAX_FILES), truncated: files.length > MAX_FILES };
+}

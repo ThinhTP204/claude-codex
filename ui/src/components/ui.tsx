@@ -2,41 +2,17 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Loader2 } from 'lucide-react';
 import type { Agent, Catalog, Permission, Usage } from '../../../shared/types.ts';
+import { CLAUDE_MARK, OPENAI_MARK } from '../assets/agentMarks.ts';
+import antigravityLogo from '../assets/antigravity.png';
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ');
 
 export function AgentIcon({ agent, size = 16 }: { agent: Agent; size?: number }) {
-  if (agent === 'claude') {
-    // Claude-style spark
-    return (
-      <svg width={size} height={size} viewBox="0 0 24 24" aria-label="Claude" className="shrink-0">
-        <g stroke="var(--claude)" strokeWidth="2.6" strokeLinecap="round">
-          {[0, 30, 60, 90, 120, 150].map((a) => (
-            <line key={a} x1="12" y1="3" x2="12" y2="21" transform={`rotate(${a} 12 12)`} />
-          ))}
-        </g>
-      </svg>
-    );
-  }
-  if (agent === 'antigravity') {
-    // Antigravity: Google-blue tile with an upward arrow
-    return (
-      <svg width={size} height={size} viewBox="0 0 24 24" aria-label="Antigravity" className="shrink-0">
-        <defs>
-          <linearGradient id="agy-g" x1="0" y1="1" x2="1" y2="0">
-            <stop offset="0" stopColor="#4285f4" />
-            <stop offset="1" stopColor="#a142f4" />
-          </linearGradient>
-        </defs>
-        <rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="url(#agy-g)" />
-        <path d="M12 17V7M7.5 11.5 12 7l4.5 4.5" stroke="white" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    );
-  }
+  if (agent === 'antigravity') return <img src={antigravityLogo} width={size} height={size} alt="Antigravity" className="shrink-0 object-contain" draggable={false} />;
+  const claude = agent === 'claude';
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-label="Codex" className="shrink-0">
-      <rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="var(--codex)" />
-      <path d="M7 9l3 3-3 3M12.5 15.5H17" stroke="white" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width={size} height={size} viewBox="0 0 24 24" role="img" aria-label={claude ? 'Claude' : 'Codex'} className="shrink-0">
+      <path d={claude ? CLAUDE_MARK : OPENAI_MARK} fill={claude ? '#D97757' : 'currentColor'} />
     </svg>
   );
 }

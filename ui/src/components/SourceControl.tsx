@@ -8,16 +8,18 @@ import {
   CloudUpload,
   GitBranch,
   GitCommitHorizontal,
+  MessageSquarePlus,
   Minus,
   Plus,
   RefreshCw,
   Search,
+  Send,
   Sparkles,
   Undo2,
 } from 'lucide-react';
 import type { GitBranch as Branch, GitCommit, GitFile } from '../../../shared/types.ts';
 import { api, qs } from '../api.ts';
-import { getState, gitAction, openFile, refreshGit, safe, scmRootOf, setScmRoot, toast, useStore } from '../store.ts';
+import { clearNotes, getState, gitAction, openFile, refreshGit, safe, scmRootOf, sendNotes, setScmRoot, toast, useStore } from '../store.ts';
 import { FileIcon } from './Explorer.tsx';
 import { Popover, Spinner, cx } from './ui.tsx';
 
@@ -410,6 +412,8 @@ function RepoPanel() {
         </button>
       </div>
 
+      <NotesBar />
+
       <div className="px-2 pb-2">
         <div className="rounded-lg border border-line bg-panel focus-within:border-accent/60">
           <textarea
@@ -563,3 +567,45 @@ function RepoPanel() {
 // project status already includes nested repos; add the extra workspace folders
 export const useChangeCount = () =>
   useStore((s) => Object.keys(s.git.files).length + Object.values(s.rootGit).reduce((n, g) => n + Object.keys(g.files).length, 0));
+
+/** Review comments written on diff lines, waiting to go to an agent. */
+function NotesBar() {
+  const notes = useStore((s) => s.notes);
+  if (!notes.length) return null;
+  const files = [...new Set(notes.map((n) => n.file))];
+  return (
+    <div className="mx-2 mb-2 rounded-lg border border-accent/30 bg-accent/5 px-2.5 py-1.5 text-[12.5px]">
+      <div className="flex items-center gap-1.5">
+        <MessageSquarePlus size={13} className="shrink-0 text-accent" />
+        <span className="min-w-0 flex-1 truncate whitespace-nowrap" title={`${files.length} file:\n${files.join('\n')}`}>
+          {notes.length} nhận xét
+        </span>
+        <button
+          type="button"
+          onClick={() => confirm(`Xoá ${notes.length} nhận xét chưa gửi?`) && clearNotes()}
+          className="shrink-0 rounded px-1.5 py-0.5 text-faint hover:bg-hover hover:text-fg"
+        >
+          Xoá
+        </button>
+        <button type="button" onClick={sendNotes} title="Đưa các nhận xét vào ô chat để gửi cho agent" className="inline-flex shrink-0 items-center gap-1 rounded-md bg-accent px-2 py-0.5 font-medium text-white">
+          <Send size={11} /> Gửi
+        </button>
+      </div>
+      <div className="mt-1 space-y-0.5">
+        {notes.map((n) => (
+          <button
+            key={n.id}
+            type="button"
+            onClick={() => openFile(n.file, { diff: true, line: n.line, root: n.root })}
+            className="flex w-full items-baseline gap-1.5 rounded px-1 text-left text-[12px] hover:bg-hover"
+          >
+            <span className="shrink-0 font-mono text-[11px] text-faint">
+              {n.file.split('/').pop()}:{n.line}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-muted">{n.text}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}

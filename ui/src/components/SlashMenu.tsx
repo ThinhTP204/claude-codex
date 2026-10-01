@@ -11,7 +11,7 @@ export interface SlashItem {
 }
 
 const cache = new Map<string, Promise<SlashItem[]>>();
-const load = (project: string, agent: Agent) => {
+export const loadSlash = (project: string, agent: Agent) => {
   const key = `${agent}:${project}`;
   if (!cache.has(key)) cache.set(key, api<SlashItem[]>('GET', `/commands${qs({ project, agent })}`).catch(() => (cache.delete(key), [])));
   return cache.get(key)!;
@@ -41,7 +41,7 @@ export function useSlashMenu(text: string, project: string | undefined, agent: A
     if (!open || !project) return;
     let alive = true;
     setItems(undefined);
-    void load(project, agent).then((l) => alive && setItems(l));
+    void loadSlash(project, agent).then((l) => alive && setItems(l));
     return () => {
       alive = false;
     };

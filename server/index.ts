@@ -17,6 +17,7 @@ import { spawn } from 'node:child_process';
 import { GitError, gitBranches, gitCheckout, gitCommit, gitDiffForMessage, gitDiscard, gitFetch, gitInfo, gitInit, gitLog, gitPull, gitPush, gitStage, gitUnstage } from './git.ts';
 import { createTerm, killTerm, listTerms, resizeTerm, setTermBroadcast, writeTerm, listProfiles, listPorts, renameTerm, stopPort, type NewTerm } from './terminals.ts';
 import { startRun } from './runner.ts';
+import { dropClient, setClientView, setNotifyBroadcast } from './notify.ts';
 import {
   createConv,
   deleteConv,
@@ -30,8 +31,9 @@ import {
   stopConv,
 } from './conversations.ts';
 import { approve, rerun, startPipeline, stopPipeline } from './pipeline.ts';
+import { changedFiles, chooseAttempt, discardFanout, fileVersions, runningFanout, startFanout, stopFanout } from './fanout.ts';
 import { deletePipeline, getPipelines, getRoles, savePipeline, saveRoles, DEFAULT_ROLES } from './roles.ts';
-import { browseDirs, clearStatusCache, projectRepos, resolveFileRef, safeJoin, forgetProject, setWorkspaceFolders, workspaceFolders, gitHead, gitStatus, listDir, openProject, pickFolder, readFile, recentProjects, watchProject, writeFile } from './projects.ts';
+import { browseDirs, clearStatusCache, projectRepos, resolveFileRef, safeJoin, forgetProject, setWorkspaceFolders, workspaceFolders, gitHead, gitStatus, listAllFiles, listDir, openProject, pickFolder, readFile, recentProjects, watchProject, writeFile } from './projects.ts';
 import { ATTACH_DIR, realpathSafe } from './store.ts';
 
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
@@ -178,6 +180,7 @@ export function start(opts: StartOptions): Promise<http.Server> {
     for (const c of clients) if (c.readyState === 1) c.send(s);
   };
   setBroadcast(send);
+  setNotifyBroadcast(send);
   startAutoContinue();
   setTermBroadcast(send);
 
@@ -324,6 +327,7 @@ export function start(opts: StartOptions): Promise<http.Server> {
     if (m === 'POST' && p === '/projects/forget') return forgetProject((await body<{ path: string }>(req)).path);
     if (m === 'POST' && p === '/projects/open') return { path: openProject((await body<{ path: string }>(req)).path) };
     if (m === 'GET' && p === '/fs/list') return listDir(project(), q('dir'));
+    if (m === 'GET' && p === '/fs/all') return listAllFiles(project());
     if (m === 'GET' && p === '/fs/resolve') return resolveFileRef(project(), q('ref'));
     if (m === 'GET' && p === '/fs/read') {
       const f = readFile(project(), q('path'));
@@ -369,18 +373,39 @@ export function start(opts: StartOptions): Promise<http.Server> {
       if (m === 'POST' && mm[2] === 'run-now') return runNow(c), { ok: true };
       if (m === 'POST' && mm[2] === 'cancel') return cancelPending(c), { ok: true };
     }
+    // ---- parallel agents in worktrees ----
+    if (m === 'POST' && (mm = /^\/conversations\/([^/]+)\/fanout$/.exec(p))) {
+      const b = await body<{ task: string; configs: RunConfig[] }>(req);
+      return startFanout(conv(mm[1]), String(b.task || ''), Array.isArray(b.configs) ? b.configs : []);
+    }
+    if ((mm = /^\/conversations\/([^/]+)\/fanout\/([\w-]+)\/(choose|discard|stop|diff|file)$/.exec(p))) {
+      const c = conv(mm[1]);
+      const f = c.fanouts?.find((x) => x.id === mm![2]);
+      if (!f) throw new HttpError(404, 'Không tìm thấy lần chạy song song này.');
+      const attempt = () => {
+        const a = f.attempts.find((x) => x.id === q('attempt'));
+        if (!a) throw new HttpError(404, 'Không tìm thấy bản này.');
+        return a;
+      };
+      if (m === 'GET' && mm[3] === 'diff') return changedFiles(f, attempt());
+      if (m === 'GET' && mm[3] === 'file') return fileVersions(f, attempt(), q('path'));
+      if (m === 'POST' && mm[3] === 'choose') return chooseAttempt(c, f.id, String((await body<{ attempt: string }>(req)).attempt)).then(() => ({ ok: true }));
+      if (m === 'POST' && mm[3] === 'discard') return discardFanout(c, f.id).then(() => ({ ok: true }));
+      if (m === 'POST' && mm[3] === 'stop') return stopFanout(c, f.id), { ok: true };
+    }
     if (m === 'POST' && (mm = /^\/conversations\/([^/]+)\/(send|stop|run|approve|rerun|run-stop)$/.exec(p))) {
       const c = conv(mm[1]);
       const b = await body<any>(req);
       switch (mm[2]) {
         case 'send':
-          if (isRunning(c.id) || c.run?.status === 'running') throw new HttpError(409, 'Đang có tác vụ chạy, hãy đợi hoặc bấm dừng.');
+          if (isRunning(c.id) || c.run?.status === 'running' || runningFanout(c)) throw new HttpError(409, 'Đang có tác vụ chạy, hãy đợi hoặc bấm dừng.');
           userActed(c);
           void executeTurn(c, { prompt: b.text, config: b.config, roleName: b.roleName, roleIcon: b.roleIcon }).catch((e) => console.error(e));
           return { ok: true, id: c.id };
         case 'stop':
           userActed(c);
-          if (c.run?.status === 'running') stopPipeline(c);
+          if (runningFanout(c)) stopFanout(c);
+          else if (c.run?.status === 'running') stopPipeline(c);
           else stopConv(c.id);
           return { ok: true };
         case 'run':
@@ -477,6 +502,7 @@ export function start(opts: StartOptions): Promise<http.Server> {
         const msg = JSON.parse(String(raw));
         if (msg.type === 'term:input') return writeTerm(msg.id, String(msg.data));
         if (msg.type === 'term:resize') return resizeTerm(msg.id, Number(msg.cols), Number(msg.rows));
+        if (msg.type === 'view') return setClientView(ws, { focused: !!msg.focused, notify: !!msg.notify });
         if (msg.type === 'watch') {
           // one window watches its project plus any extra workspace folders
           const roots = (Array.isArray(msg.projects) ? msg.projects : [msg.project]).filter((r: unknown): r is string => typeof r === 'string' && fs.existsSync(r));
@@ -490,6 +516,7 @@ export function start(opts: StartOptions): Promise<http.Server> {
     });
     ws.on('close', () => {
       clients.delete(ws);
+      dropClient(ws);
       unwatch.get(ws)?.();
       unwatch.delete(ws);
       if (opts.exitWhenIdle && clients.size === 0) {

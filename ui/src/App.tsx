@@ -11,6 +11,7 @@ import { RolesDialog } from './components/RolesDialog.tsx';
 import { UpdateDialog } from './components/UpdateDialog.tsx';
 import { useProblemCounts } from './components/ProblemsView.tsx';
 import { FolderBrowser } from './components/FolderBrowser.tsx';
+import { QuickOpen } from './components/QuickOpen.tsx';
 import { useOpenShortcut } from './components/ProjectMenu.tsx';
 import { cx, Spinner } from './components/ui.tsx';
 
@@ -141,6 +142,8 @@ export function App() {
   const [rightW, setRightW] = useWidth('rightW', 280);
   const [leftOpen, setLeftOpen] = useWidth('leftOpen', 1);
   const [rightOpen, setRightOpen] = useWidth('rightOpen', 1);
+  /** ⌘P box: its starting text ("" files, ">" commands), undefined = closed */
+  const [quick, setQuick] = useState<string>();
   const [termH, setTermH] = useWidth('termH', 280);
   const termOpen = useStore((s) => s.termOpen);
   const termMax = useStore((s) => s.termMax);
@@ -165,6 +168,11 @@ export function App() {
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
+      // ⌘P quick open, ⇧⌘P commands (as in VS Code)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p' && !e.altKey) {
+        e.preventDefault();
+        setQuick(e.shiftKey ? '>' : '');
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
         e.preventDefault();
         setLeftOpen(leftOpen ? 0 : 1);
@@ -372,6 +380,7 @@ export function App() {
       {showRoles && <RolesDialog />}
       {showUpdate && <UpdateDialog />}
       {showFolderBrowser && <FolderBrowser />}
+      {quick !== undefined && <QuickOpen initial={quick} onClose={() => setQuick(undefined)} toggleSidebar={() => setLeftOpen(leftOpen ? 0 : 1)} showRight={() => setRightOpen(1)} />}
       {toast && (
         <div
           className={cx(

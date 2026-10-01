@@ -4,6 +4,8 @@ import type { Agent, Block, Conversation, ConversationSummary, RunConfig, Server
 import { CONV_DIR, dataFile, readJson, uid, writeJson } from './store.ts';
 import { startRun, type RunHandle, type RunResult } from './runner.ts';
 import { listNativeSessions, nativeTurns } from './sessions.ts';
+import { headBranch, sessionLanes, sessionStatus } from './activity.ts';
+import { sessionEvent } from './notify.ts';
 
 export const NEW_TITLE = 'Cuộc trò chuyện mới';
 const AGENT_LABEL: Record<Agent, string> = { claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity' };
@@ -37,7 +39,7 @@ function entryOf(c: Conversation): IndexEntry {
   return { ...s, projectPath: c.projectPath, sessionIds: Object.values(c.sessions).filter((x): x is string => !!x), hasContent: c.turns.length > 0 || !!c.run };
 }
 
-const pinned = (c: Conversation) => active.has(c.id) || c.run?.status === 'running';
+const pinned = (c: Conversation) => active.has(c.id) || c.run?.status === 'running' || !!c.fanouts?.some((f) => f.status === 'running');
 
 function writeNow(c: Conversation) {
   clearTimeout(saveTimers.get(c.id));
@@ -88,6 +90,12 @@ for (const f of fs.readdirSync(CONV_DIR)) {
     }
     dirty = true;
   }
+  for (const f of c.fanouts ?? []) {
+    if (f.status !== 'running') continue;
+    for (const a of f.attempts) if (a.status === 'running') a.status = 'stopped';
+    f.status = 'ready';
+    dirty = true;
+  }
   if (dirty) writeJson(fileOf(c.id), c);
   index.set(c.id, entryOf(c));
 }
@@ -122,6 +130,7 @@ export function summary(c: Conversation): ConversationSummary {
     if (t.agent) agents.add(t.agent);
     if (t.model) models.add(t.model);
   }
+  const lanes = sessionLanes(c, (id) => cache.get(id) ?? (index.has(id) ? loadConv(id) : undefined));
   return {
     id: c.id,
     title: c.title,
@@ -131,7 +140,30 @@ export function summary(c: Conversation): ConversationSummary {
     source: c.source,
     running: active.has(c.id),
     runStatus: c.run?.status,
+    status: sessionStatus(c, active.has(c.id)),
+    branch: c.branch,
+    lanes: lanes.length ? lanes : undefined,
+    autoAt: c.auto?.enabled ? c.auto.pending?.at : undefined,
   };
+}
+
+// The sidebar follows what running agents do: one row update at most every 700 ms per session.
+const rowTimers = new Map<string, NodeJS.Timeout>();
+function publishRow(c: Conversation): void {
+  // an agent of a parallel run: its parent's row shows it
+  if (c.parentId) {
+    const parent = loadConv(c.parentId);
+    if (parent) publishRow(parent);
+    return;
+  }
+  if (rowTimers.has(c.id)) return;
+  rowTimers.set(
+    c.id,
+    setTimeout(() => {
+      rowTimers.delete(c.id);
+      broadcast({ type: 'summary', projectPath: c.projectPath, summary: summary(c) });
+    }, 700),
+  );
 }
 
 export function listConvs(projectPath: string): ConversationSummary[] {
@@ -139,7 +171,7 @@ export function listConvs(projectPath: string): ConversationSummary[] {
   const known = new Set(mine.flatMap((e) => e.sessionIds));
   const native = listNativeSessions(projectPath).filter((s) => !known.has(s.sessionId) && !hidden.has(s.sessionId));
   return [
-    ...mine.map(({ projectPath: _p, sessionIds: _s, hasContent: _h, ...e }) => ({ ...e, running: active.has(e.id) })),
+    ...mine.map(({ projectPath: _p, sessionIds: _s, hasContent: _h, ...e }) => ({ ...e, running: active.has(e.id), status: active.has(e.id) ? 'running' : e.status }) as ConversationSummary),
     ...native.map(({ file: _f, sessionId: _s, ...rest }) => rest),
   ].sort((a, b) => b.updatedAt - a.updatedAt);
 }
@@ -261,7 +293,7 @@ const finalText = (t: Turn) =>
     .join('\n\n');
 
 /** Everything this provider has not seen yet, rendered as a transcript it can read. */
-function buildContext(c: Conversation, agent: Agent, upto: number): string {
+export function buildContext(c: Conversation, agent: Agent, upto: number): string {
   const parts: string[] = [];
   for (const t of c.turns.slice(c.seen[agent] || 0, upto)) {
     if (t.role === 'user') {
@@ -308,6 +340,7 @@ export async function executeTurn(c: Conversation, o: TurnOptions): Promise<{ tu
     status: 'done',
   };
   c.turns.push(userTurn);
+  c.branch = headBranch(c.projectPath) ?? c.branch;
   // title: the typed text, without the "📎 Đính kèm:" list the composer appends
   if (c.title === NEW_TITLE) c.title = (o.display ?? o.prompt).split('\n\n📎 ')[0].replace(/\s+/g, ' ').slice(0, 80) || NEW_TITLE;
 
@@ -344,6 +377,7 @@ export async function executeTurn(c: Conversation, o: TurnOptions): Promise<{ tu
         const b = upsertBlock(turn, block);
         broadcast({ type: 'turn', convId: c.id, turnId: turn.id, ev: { t: 'block', block: b } });
         saveConv(c);
+        publishRow(c);
       },
     });
     active.set(c.id, handle);
@@ -371,6 +405,11 @@ export async function executeTurn(c: Conversation, o: TurnOptions): Promise<{ tu
   saveConv(c, true);
   publish(c);
   turnEndHook(c, out.turn, out.result);
+  // pipeline steps report once the whole run stops (see pipeline.ts)
+  if (!o.nodeId && !c.parentId && !out.result.stopped) {
+    if (out.result.ok) sessionEvent(c, 'done', finalText(out.turn) || out.result.finalText || '');
+    else sessionEvent(c, 'error', out.result.error || 'Agent dừng vì lỗi');
+  }
   return out;
 }
 

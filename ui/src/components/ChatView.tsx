@@ -10,6 +10,7 @@ import { reviewSections } from '../../../shared/verdict.ts';
 import { AttachButton, AttachmentChip } from './Attachments.tsx';
 import { type Attachment, REF_MIME, isImage, uploadFile, withAttachments } from '../attachments.ts';
 import { ProjectChip } from './ProjectMenu.tsx';
+import { FanoutPanel, ParallelButton } from './Fanout.tsx';
 import { TurnView, Markdown } from './Message.tsx';
 import { AGENT_NAME, AgentIcon, EFFORT_LABEL, Popover, Spinner, cx, fmtDuration, fmtTokens, fmtUsage, inputCls, modelLabel } from './ui.tsx';
 
@@ -60,7 +61,15 @@ export function ChatView() {
       >
         <div className="mx-auto max-w-3xl space-y-6 px-6 pb-8 pt-6">
           {conv!.turns.map((t) => (
-            <TurnView key={t.id} t={t} draft={drafts[t.id]} />
+            <div key={t.id} className="space-y-6">
+              <TurnView t={t} draft={drafts[t.id]} />
+              {/* a parallel run sits right under the message that started it */}
+              {conv!.fanouts
+                ?.filter((f) => f.turnId === t.id)
+                .map((f) => (
+                  <FanoutPanel key={f.id} conv={conv!} f={f} />
+                ))}
+            </div>
           ))}
         </div>
       </div>
@@ -471,7 +480,7 @@ function Composer({ autoFocus }: { autoFocus?: boolean }) {
     requestAnimationFrame(() => ta.current?.focus());
   });
   const ta = useRef<HTMLTextAreaElement>(null);
-  const running = !!conv?.turns.some((t) => t.status === 'running') || conv?.run?.status === 'running';
+  const running = !!conv?.turns.some((t) => t.status === 'running') || conv?.run?.status === 'running' || !!conv?.fanouts?.some((f) => f.status === 'running');
   const uploading = atts.some((a) => a.uploading);
 
   const addFiles = (files: File[]) => {
@@ -624,6 +633,17 @@ function Composer({ autoFocus }: { autoFocus?: boolean }) {
           <AutoContinueButton />
           <ConfigPicker value={composer} onChange={(c) => setComposer(c, roleId)} />
           <div className="ml-auto flex items-center gap-1.5">
+            <ParallelButton
+              disabled={running}
+              getTask={() => {
+                if (uploading) return void toast('Đợi file tải lên xong đã', 'info');
+                return withAttachments(text.trim(), atts).trim() || undefined;
+              }}
+              onStarted={() => {
+                setText('');
+                clearAtts();
+              }}
+            />
             <Popover
               placement="top-end"
               width={280}

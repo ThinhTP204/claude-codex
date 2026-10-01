@@ -206,6 +206,8 @@ export function ensureTerm(id: string, initial = '', pty = true): Entry {
     if (ev.type !== 'keydown') return true;
     const mod = isMac ? ev.metaKey : ev.ctrlKey && ev.shiftKey;
     if (mod && ev.key.toLowerCase() === 'f') return hooks.keys(id, 'find'), false;
+    // quick open belongs to the app, as in VS Code (the window's own shortcut handles it)
+    if ((isMac ? ev.metaKey : ev.ctrlKey) && ev.key.toLowerCase() === 'p') return false;
     if (isMac && ev.metaKey && ev.key.toLowerCase() === 'k') return term.clear(), false;
     if ((isMac ? ev.metaKey : ev.ctrlKey && ev.shiftKey) && ev.key === '\\') return hooks.keys(id, 'split'), false;
     if (ev.ctrlKey && ev.shiftKey && (ev.key === '`' || ev.key === '~')) return hooks.keys(id, 'new'), false;

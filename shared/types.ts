@@ -169,6 +169,76 @@ export interface Conversation {
   /** for imported sessions: turn count at import time (unchanged => safe to re-import) */
   importedCount?: number;
   auto?: AutoContinue;
+  /** git branch of the project when the last turn started */
+  branch?: string;
+  /** same task given to several agents at once, each in its own git worktree */
+  fanouts?: Fanout[];
+  /** set on the hidden conversation of one fan-out attempt */
+  parentId?: string;
+}
+
+export interface FanoutAttempt {
+  id: string;
+  config: RunConfig;
+  /** hidden conversation running in the worktree */
+  convId: string;
+  /** worktree folder (the agent's working directory) */
+  path: string;
+  branch: string;
+  status: 'running' | 'done' | 'error' | 'stopped';
+  startedAt: number;
+  durationMs?: number;
+  /** what changed compared with the starting point */
+  stat?: { files: number; additions: number; deletions: number };
+  /** the agent's final answer */
+  answer?: string;
+  error?: string;
+  usage?: Usage;
+}
+
+export interface Fanout {
+  id: string;
+  /** user turn that started it (the panel is shown right after it) */
+  turnId: string;
+  task: string;
+  /** commit the worktrees start from (HEAD, or a snapshot of uncommitted changes) */
+  base: string;
+  /** the project's branch at that time */
+  baseBranch?: string;
+  /** git repo root, and the project's folder inside it ("" = the root) */
+  repo: string;
+  prefix: string;
+  startedAt: number;
+  status: 'running' | 'ready' | 'merged' | 'discarded';
+  attempts: FanoutAttempt[];
+  /** attempt whose changes were applied */
+  chosen?: string;
+}
+
+export interface FanoutFile {
+  path: string;
+  /** A added, M modified, D deleted, R renamed */
+  status: string;
+  additions: number;
+  deletions: number;
+}
+
+/** What a session is doing, as shown in the sidebar. */
+export type SessionStatus = 'running' | 'awaiting' | 'done' | 'error' | 'stopped';
+
+/** One agent at work in a session: the chat's current turn, or a pipeline step. */
+export interface SessionLane {
+  id: string;
+  /** a pipeline step, or one of several agents running the same task in parallel */
+  kind: 'step' | 'agent';
+  agent: Agent;
+  /** step name, role or model */
+  label: string;
+  status: NodeStatus;
+  /** what it is doing right now, e.g. "Đang sửa Sidebar.tsx" */
+  activity?: string;
+  startedAt?: number;
+  durationMs?: number;
 }
 
 export interface ConversationSummary {
@@ -180,6 +250,12 @@ export interface ConversationSummary {
   source: 'app' | 'claude' | 'codex';
   running?: boolean;
   runStatus?: PipelineRun['status'];
+  status?: SessionStatus;
+  branch?: string;
+  /** agents / pipeline steps, for the expandable sidebar row */
+  lanes?: SessionLane[];
+  /** an automatic continue is scheduled at this time */
+  autoAt?: number;
 }
 
 export interface ModelInfo {
@@ -347,6 +423,10 @@ export type ServerMessage =
   | { type: 'conv'; conv: Conversation }
   | { type: 'turn'; convId: string; turnId: string; ev: TurnEvent }
   | { type: 'list'; projectPath: string }
+  /** live change of one sidebar row (activity of a running agent) */
+  | { type: 'summary'; projectPath: string; summary: ConversationSummary }
+  /** a session finished, failed or waits for the user (OS notification + unread marker) */
+  | { type: 'session:event'; projectPath: string; convId: string; title: string; kind: 'done' | 'error' | 'awaiting'; text: string }
   | { type: 'fs'; root: string; paths: string[] }
   | { type: 'term:data'; id: string; data: string }
   | { type: 'term:exit'; id: string; code?: number }

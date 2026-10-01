@@ -443,6 +443,50 @@ html.page-hidden *::after {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
+/* review comments on code lines (LineNotes.tsx) */
+.monaco-editor .note-add,
+.monaco-editor .note-glyph {
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.monaco-editor .note-add::before {
+  content: '+';
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font: 600 13px/15px system-ui, sans-serif;
+  text-align: center;
+}
+.monaco-editor .note-glyph::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--accent);
+}
+.monaco-editor .note-line {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.monaco-editor .note-zone {
+  z-index: 5;
+  cursor: auto;
+}
+.note-card {
+  margin: 6px 0 6px 6px;
+  max-width: 680px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--panel);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  white-space: normal;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.12);
+}
+
 /* Terminal: a gutter for the command circles (shell integration), like VS Code */
 .term-host .xterm {
   padding-left: 16px;

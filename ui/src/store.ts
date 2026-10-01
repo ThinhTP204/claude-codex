@@ -88,6 +88,28 @@ export interface State {
   /** newer AgentDesk on GitHub (git installs) */
   update?: UpdateInfo;
   showUpdate: boolean;
+  /** sessions that finished / failed / wait for the user while you were elsewhere */
+  unread: Record<string, number>;
+  /** OS notifications while the window is in the background */
+  notify: boolean;
+  /** review comments on code lines, waiting to be sent to an agent */
+  notes: LineNote[];
+}
+
+/** A comment on lines of a file (or of its git HEAD version in a diff), for the agent. */
+export interface LineNote {
+  id: string;
+  file: string;
+  /** workspace folder (undefined = the project) */
+  root?: string;
+  /** 'old' = the HEAD side of a diff (lines that were removed or changed) */
+  side: 'new' | 'old';
+  line: number;
+  endLine: number;
+  /** the lines as they were when commented (line numbers drift as files change) */
+  code: string;
+  text: string;
+  createdAt: number;
 }
 
 export type BottomTab = 'terminal' | 'problems' | 'ports';
@@ -163,6 +185,9 @@ let state: State = {
   termMax: false,
   termCmd: {},
   terms: [],
+  unread: LS.get<Record<string, number>>('unread', {}),
+  notify: LS.get('notify', true),
+  notes: [],
 };
 
 const listeners = new Set<() => void>();
@@ -353,6 +378,7 @@ export async function openProject(path: string): Promise<void> {
     checkers: [],
     scmRoot: undefined,
     gitInfo: undefined,
+    notes: LS.get<LineNote[]>(`notes:${r.path}`, []),
   }));
   wsSend({ type: 'watch', project: r.path });
   void refreshList();
@@ -379,6 +405,7 @@ export async function pickProject(): Promise<void> {
 
 export async function openConv(id: string): Promise<void> {
   const project = state.project;
+  if (state.unread[id]) markRead(id);
   LS.set(`conv:${project}`, id);
   setState({ convId: id, convLoading: state.conv?.id !== id, activeTab: state.activeTab.startsWith('file:') ? 'chat' : state.activeTab });
   const c = await safe(api<Conversation>('GET', `/conversations/${encodeURIComponent(id)}${qs({ project })}`));
@@ -566,6 +593,37 @@ export function hideRun(runId: string): void {
   setState({ hiddenRuns });
 }
 
+// ---------------- review comments on code lines ----------------
+
+function setNotes(notes: LineNote[]): void {
+  if (state.project) LS.set(`notes:${state.project}`, notes);
+  setState({ notes });
+}
+
+export function addNote(n: Omit<LineNote, 'id' | 'createdAt'>): void {
+  setNotes([...state.notes, { ...n, id: Math.random().toString(36).slice(2, 10), createdAt: Date.now() }]);
+}
+export const editNote = (id: string, text: string) => setNotes(state.notes.map((n) => (n.id === id ? { ...n, text } : n)));
+export const removeNote = (id: string) => setNotes(state.notes.filter((n) => n.id !== id));
+export const clearNotes = () => setNotes([]);
+
+/** All comments as one message for the agent, put into the chat box (you pick the agent, then send). */
+export function sendNotes(): void {
+  const notes = [...state.notes].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
+  if (!notes.length) return;
+  const fence = (code: string) => '`'.repeat(Math.max(3, ...[...code.matchAll(/`+/g)].map((m) => m[0].length + 1)));
+  const parts = notes.map((n) => {
+    const where = `${n.root ? `${n.root}/` : ''}${n.file}`;
+    const lines = n.line === n.endLine ? `dòng ${n.line}` : `dòng ${n.line}–${n.endLine}`;
+    const side = n.side === 'old' ? ' (bản cũ trong git HEAD, phần đã bị xoá hoặc sửa)' : '';
+    const f = fence(n.code);
+    return `- \`${where}\` ${lines}${side}:\n${f}\n${n.code}\n${f}\n  → ${n.text.trim().replace(/\n/g, '\n    ')}`;
+  });
+  insertIntoComposer(`Nhận xét của tôi về code, hãy sửa theo từng ý:\n\n${parts.join('\n\n')}\n`);
+  clearNotes();
+  toast(`Đã đưa ${notes.length} nhận xét vào ô chat. Chọn agent rồi gửi.`, 'info');
+}
+
 /** Put text into the chat composer and switch to the chat tab. */
 export function insertIntoComposer(text: string): void {
   setState((s) => ({ composerInsert: { text, n: (s.composerInsert?.n || 0) + 1 }, activeTab: 'chat' }));
@@ -708,6 +766,44 @@ const runningConvs = new Set<string>();
 let usageTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** Usage numbers move after every run: refresh once a conversation stops working. */
+// ---------------- unread + notifications ----------------
+
+const windowFocused = () => document.visibilityState === 'visible' && document.hasFocus();
+
+/** Tell the server whether a window is in front (it sends OS notifications only when none is). */
+export function sendView(): void {
+  wsSend({ type: 'view', focused: windowFocused(), notify: state.notify });
+}
+for (const ev of ['focus', 'blur']) window.addEventListener(ev, sendView);
+// back to the window: the open session has been seen
+window.addEventListener('focus', () => state.convId && state.unread[state.convId] && markRead(state.convId));
+document.addEventListener('visibilitychange', sendView);
+
+export function setNotify(on: boolean): void {
+  LS.set('notify', on);
+  setState({ notify: on });
+  sendView();
+}
+
+function markRead(id: string): void {
+  const { [id]: _, ...unread } = state.unread;
+  LS.set('unread', unread);
+  setState({ unread });
+}
+
+const EVENT_LABEL = { done: 'Xong', error: 'Gặp lỗi', awaiting: 'Chờ bạn duyệt' } as const;
+
+function onSessionEvent(msg: Extract<ServerMessage, { type: 'session:event' }>): void {
+  const looking = msg.convId === state.convId && windowFocused();
+  if (looking) return;
+  const unread = { ...state.unread, [msg.convId]: Date.now() };
+  // keep the newest few hundred
+  const keep = Object.fromEntries(Object.entries(unread).sort((a, b) => b[1] - a[1]).slice(0, 300));
+  LS.set('unread', keep);
+  setState({ unread: keep });
+  if (windowFocused() && msg.projectPath === state.project) toast(`${EVENT_LABEL[msg.kind]}: ${msg.title}`, msg.kind === 'error' ? 'error' : 'info');
+}
+
 function trackRunning(c: Conversation): void {
   const busy = c.turns.some((t) => t.status === 'running') || c.run?.status === 'running';
   if (busy) runningConvs.add(c.id);
@@ -756,6 +852,18 @@ function onMessage(msg: ServerMessage): void {
         listTimer = setTimeout(refreshList, 250);
       }
       break;
+    case 'summary':
+      if (msg.projectPath === state.project) {
+        const i = state.convList.findIndex((c) => c.id === msg.summary.id);
+        if (i < 0) {
+          clearTimeout(listTimer);
+          listTimer = setTimeout(refreshList, 250);
+        } else setState((s) => ({ convList: s.convList.map((c) => (c.id === msg.summary.id ? msg.summary : c)) }));
+      }
+      break;
+    case 'session:event':
+      onSessionEvent(msg);
+      break;
     case 'turn': {
       const c = state.conv;
       if (!c || c.id !== msg.convId) break;
@@ -794,6 +902,7 @@ export function boot(): void {
       if (loadedBuild && e.build && e.build !== loadedBuild) location.reload();
     });
     watchAll();
+    sendView();
     if (state.convId) void openConv(state.convId);
     void refreshList();
   });

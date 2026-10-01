@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import Editor, { DiffEditor } from '@monaco-editor/react';
-import { Columns2, RotateCcw, Save } from 'lucide-react';
+import { Columns2, MessageSquarePlus, RotateCcw, Save, Send } from 'lucide-react';
 import '../monaco.ts';
 import { api, qs } from '../api.ts';
-import { checkAfterSave, fileKey, safe, toast, useStore } from '../store.ts';
+import { checkAfterSave, fileKey, safe, sendNotes, toast, useStore } from '../store.ts';
+import { LineNotes } from './LineNotes.tsx';
 import { FileIcon } from './Explorer.tsx';
 import { Spinner, cx } from './ui.tsx';
 import { useIsDark } from '../theme.ts';
@@ -54,6 +55,11 @@ export function FileView({ path, root, diff: openInDiff, line, nonce }: { path: 
   dirtyRef.current = dirty;
   const editorRef = useRef<any>(null);
   const [editorReady, setEditorReady] = useState(0);
+  // editors the review comments attach to: the file, or both sides of the diff
+  const [noteEds, setNoteEds] = useState<{ main?: any; old?: any; neu?: any; monaco?: any }>({});
+  const noteCount = useStore((s) => s.notes.length);
+  // switching diff ↔ editor disposes the other editor(s)
+  useEffect(() => setNoteEds((e) => (diff ? { ...e, main: undefined } : { ...e, old: undefined, neu: undefined })), [diff]);
   // a hidden tab's editor measured 0px: re-measure as soon as it is shown again
   const active = useStore((s) => s.activeTab === `file:${fileId}`);
   useEffect(() => {
@@ -171,6 +177,15 @@ export function FileView({ path, root, diff: openInDiff, line, nonce }: { path: 
         </span>
         {gitCode && <span className="rounded bg-warn/15 px-1.5 text-[11px] font-semibold text-warn">{gitCode}</span>}
         <div className="ml-auto flex items-center gap-1">
+          {noteCount > 0 ? (
+            <button type="button" onClick={sendNotes} className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-accent hover:bg-accent/10" title="Đưa các nhận xét vào ô chat để gửi cho agent">
+              <Send size={12} /> Gửi {noteCount} nhận xét cho agent
+            </button>
+          ) : (
+            <span className="hidden items-center gap-1 text-faint lg:inline-flex" title="Bấm dấu + cạnh số dòng, hoặc chuột phải, để nhận xét cho agent">
+              <MessageSquarePlus size={12} /> Bấm + cạnh dòng để nhận xét
+            </span>
+          )}
           {canDiff && (
             <button type="button" onClick={() => setDiff((d) => !d)} className={cx('inline-flex items-center gap-1 rounded px-2 py-0.5 hover:bg-hover hover:text-fg', diff && 'bg-hover text-fg')} title="So sánh với git HEAD">
               <Columns2 size={13} /> Diff
@@ -196,6 +211,7 @@ export function FileView({ path, root, diff: openInDiff, line, nonce }: { path: 
             language={langOf(path)}
             theme={theme}
             options={{ ...options, readOnly: true, renderSideBySide: true, minimap: { enabled: false } }}
+            onMount={(d, m) => setNoteEds({ old: d.getOriginalEditor(), neu: d.getModifiedEditor(), monaco: m })}
           />
         ) : (
           <Editor
@@ -209,11 +225,20 @@ export function FileView({ path, root, diff: openInDiff, line, nonce }: { path: 
               editorRef.current = editor;
               monacoRef.current = m;
               setEditorReady((n) => n + 1);
+              setNoteEds((e) => ({ ...e, main: editor, monaco: m }));
               editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => document.dispatchEvent(new CustomEvent('agentdesk-save', { detail: fileId })));
             }}
           />
         )}
       </div>
+      {diff && canDiff ? (
+        <>
+          <LineNotes editor={noteEds.neu} monaco={noteEds.monaco} file={path} root={root} side="new" />
+          <LineNotes editor={noteEds.old} monaco={noteEds.monaco} file={path} root={root} side="old" />
+        </>
+      ) : (
+        <LineNotes editor={noteEds.main} monaco={noteEds.monaco} file={path} root={root} side="new" />
+      )}
       <SaveListener path={fileId} onSave={save} />
     </div>
   );

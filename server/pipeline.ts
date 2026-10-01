@@ -1,4 +1,5 @@
 import type { Conversation, PNode, Pipeline, PipelineRun, RunConfig, Turn } from '../shared/types.ts';
+import { sessionEvent } from './notify.ts';
 import { pipelineSkills } from './commands.ts';
 import { executeTurn, finalText, isRunning, publish, saveConv, stopConv } from './conversations.ts';
 import { getRoles } from './roles.ts';
@@ -202,10 +203,15 @@ async function pump(c: Conversation): Promise<void> {
   if (run.status === 'done' || run.status === 'stopped') run.endedAt = Date.now();
   saveConv(c, true);
   publish(c);
+  const cur = run.current ? nodeOf(run, run.current) : undefined;
+  const label = cur?.data.label ?? '';
+  if (run.status === 'done') sessionEvent(c, 'done', `Pipeline ${run.pipeline.name} đã chạy xong.`);
+  else if (run.status === 'awaiting') sessionEvent(c, 'awaiting', `Bước "${label}" đang chờ bạn duyệt.`);
+  else if (run.status === 'error') sessionEvent(c, 'error', `Bước "${label}" gặp lỗi: ${(run.current && run.nodes[run.current]?.error) || ''}`);
 }
 
 export function startPipeline(c: Conversation, pipeline: Pipeline, task: string): void {
-  if (isRunning(c.id) || c.run?.status === 'running') throw new Error('Đang có tác vụ chạy trong cuộc trò chuyện này.');
+  if (isRunning(c.id) || c.run?.status === 'running' || c.fanouts?.some((f) => f.status === 'running')) throw new Error('Đang có tác vụ chạy trong cuộc trò chuyện này.');
   if (!task.trim()) throw new Error('Chưa nhập task.');
   const start = pipeline.nodes.find((n) => n.type === 'task');
   if (!start) throw new Error('Pipeline cần một node Task để bắt đầu.');
