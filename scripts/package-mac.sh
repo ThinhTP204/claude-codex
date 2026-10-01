@@ -63,5 +63,10 @@ mkdir -p "$TMP/dmg"
 cp -R "$APP" "$TMP/dmg/"
 ln -s /Applications "$TMP/dmg/Applications"
 rm -f "$DMG"
-hdiutil create -volname "AgentDesk" -srcfolder "$TMP/dmg" -ov -format UDZO "$DMG" >/dev/null
+# hdiutil sometimes fails with "Resource busy" on CI runners: try a few times
+for i in 1 2 3; do
+  hdiutil create -volname "AgentDesk" -srcfolder "$TMP/dmg" -ov -format UDZO "$DMG" >/dev/null && break
+  [ "$i" = 3 ] && exit 1
+  echo "  hdiutil lỗi, thử lại ($i)…"; sleep $((i * 5))
+done
 echo "✓ $DMG ($(du -h "$DMG" | cut -f1))"
