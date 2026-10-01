@@ -92,12 +92,20 @@ function nativeWindowBin() {
   // the binary name is what macOS shows in the menu bar
   const bin = path.join(DATA, 'bin', 'AgentDesk');
   const fresh = fs.existsSync(bin) && fs.statSync(bin).mtimeMs >= fs.statSync(src).mtimeMs;
-  if (fresh) return bin;
+  // the window picks its Dock icon up from next to the binary
+  const icon = () => {
+    try {
+      fs.copyFileSync(path.join(ROOT, 'native', 'AgentDesk.png'), path.join(DATA, 'bin', 'AgentDesk.png'));
+    } catch {}
+  };
+  if (fresh) return icon(), bin;
   if (spawnSync('which', ['swiftc']).status !== 0) return null;
   console.log('Đang dựng cửa sổ native (chỉ lần đầu)…');
   fs.mkdirSync(path.dirname(bin), { recursive: true });
   const r = spawnSync('swiftc', ['-O', src, '-o', bin], { stdio: 'inherit' });
-  return r.status === 0 ? bin : null;
+  if (r.status !== 0) return null;
+  icon();
+  return bin;
 }
 
 /** Start a detached process; a missing program must never crash AgentDesk. */

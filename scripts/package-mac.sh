@@ -21,7 +21,12 @@ npx vite build >/dev/null
 
 echo "▸ cửa sổ native + icon"
 swiftc -O native/AgentDeskWindow.swift -o "$APP/Contents/MacOS/AgentDesk"
-"$APP/Contents/MacOS/AgentDesk" --export-iconset "$TMP/AgentDesk.iconset"
+# native/AgentDesk.png comes from docs/logo.svg via scripts/render-logo.mjs
+mkdir -p "$TMP/AgentDesk.iconset"
+for s in 16 32 128 256 512; do
+  sips -z $s $s native/AgentDesk.png --out "$TMP/AgentDesk.iconset/icon_${s}x${s}.png" >/dev/null
+  sips -z $((s * 2)) $((s * 2)) native/AgentDesk.png --out "$TMP/AgentDesk.iconset/icon_${s}x${s}@2x.png" >/dev/null
+done
 iconutil -c icns "$TMP/AgentDesk.iconset" -o "$RES/AgentDesk.icns"
 
 echo "▸ Node + code app"

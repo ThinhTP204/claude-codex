@@ -2,7 +2,6 @@
 // Built on first launch by bin/agentdesk.js:  swiftc -O native/AgentDeskWindow.swift -o ~/.agentdesk/bin/AgentDeskWindow
 // Usage: AgentDeskWindow <url>        (started by `agentdesk`, the server already runs)
 //        AgentDesk.app                 (packaged: starts the bundled server itself, see scripts/package-mac.sh)
-//        AgentDeskWindow --export-iconset <dir>   (PNG sizes for iconutil)
 import AppKit
 import WebKit
 
@@ -19,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.applicationIconImage = Self.makeIcon()
+        if let icon = Self.makeIcon() { NSApp.applicationIconImage = icon }
         buildMenu()
 
         let config = WKWebViewConfiguration()
@@ -208,58 +207,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         a.beginSheetModal(for: window) { r in completionHandler(r == .alertFirstButtonReturn ? field.stringValue : nil) }
     }
 
-    /** Dock icon: the AgentDesk mark (docs/logo.svg) drawn on its 128-unit grid. */
-    static func makeIcon() -> NSImage {
-        let size = NSSize(width: 512, height: 512)
-        let img = NSImage(size: size)
-        img.lockFocus()
-        // macOS icons keep a margin around the tile; the SVG's y axis points down
-        let inset: CGFloat = 40, k = (512 - 2 * inset) / 128
-        func r(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> NSRect {
-            NSRect(x: inset + x * k, y: inset + (128 - y - h) * k, width: w * k, height: h * k)
-        }
-        func p(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: inset + x * k, y: inset + (128 - y) * k) }
-        func color(_ hex: Int) -> NSColor {
-            NSColor(red: CGFloat((hex >> 16) & 0xff) / 255, green: CGFloat((hex >> 8) & 0xff) / 255, blue: CGFloat(hex & 0xff) / 255, alpha: 1)
-        }
-        color(0x1f1e1c).setFill()
-        NSBezierPath(roundedRect: r(0, 0, 128, 128), xRadius: 28 * k, yRadius: 28 * k).fill()
-        let links = NSBezierPath()
-        links.lineWidth = 3.5 * k
-        links.lineCapStyle = .round
-        links.move(to: p(84, 42))
-        links.curve(to: p(98, 54), controlPoint1: p(93, 42), controlPoint2: p(98, 46))
-        links.move(to: p(44, 86))
-        links.curve(to: p(30, 74), controlPoint1: p(35, 86), controlPoint2: p(30, 82))
-        color(0x5a5750).setStroke()
-        links.stroke()
-        for (x, y, hex) in [(30.0, 34.0, 0xD97757), (46.0, 56.0, 0x10A37F), (30.0, 78.0, 0x8f8a80)] {
-            color(hex).setFill()
-            NSBezierPath(roundedRect: r(CGFloat(x), CGFloat(y), 52, 16), xRadius: 8 * k, yRadius: 8 * k).fill()
-        }
-        img.unlockFocus()
-        return img
+    /** Dock icon (docs/logo.svg): AgentDesk.icns inside the .app, else AgentDesk.png next to the binary (dev build). */
+    static func makeIcon() -> NSImage? {
+        if let icon = Bundle.main.image(forResource: "AgentDesk") { return icon }
+        let png = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent().appendingPathComponent("AgentDesk.png")
+        return NSImage(contentsOf: png)
     }
 }
 
 let args = CommandLine.arguments
-if args.count > 2, args[1] == "--export-iconset" {
-    // PNGs for `iconutil -c icns` (scripts/package-mac.sh)
-    let dir = URL(fileURLWithPath: args[2])
-    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    let icon = AppDelegate.makeIcon()
-    for (px, name) in [(16, "16x16"), (32, "16x16@2x"), (32, "32x32"), (64, "32x32@2x"), (128, "128x128"), (256, "128x128@2x"),
-                       (256, "256x256"), (512, "256x256@2x"), (512, "512x512"), (1024, "512x512@2x")] {
-        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px, bitsPerSample: 8, samplesPerPixel: 4,
-                                   hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        icon.draw(in: NSRect(x: 0, y: 0, width: px, height: px))
-        NSGraphicsContext.restoreGraphicsState()
-        try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent("icon_\(name).png"))
-    }
-    exit(0)
-}
 // no URL: running as AgentDesk.app, start the bundled server
 let url = args.count > 1 ? URL(string: args[1]) : nil
 
