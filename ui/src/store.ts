@@ -775,6 +775,14 @@ export function sendView(): void {
   wsSend({ type: 'view', focused: windowFocused(), notify: state.notify });
 }
 for (const ev of ['focus', 'blur']) window.addEventListener(ev, sendView);
+// the CLIs refresh their model lists on their own (Codex: ~/.codex/models_cache.json):
+// pick up new models when the user comes back to the window, at most once a minute
+let catalogAt = Date.now();
+window.addEventListener('focus', () => {
+  if (Date.now() - catalogAt < 60_000) return;
+  catalogAt = Date.now();
+  void api<Catalog>('GET', '/catalog').then((catalog) => setState({ catalog }), () => {});
+});
 // back to the window: the open session has been seen
 window.addEventListener('focus', () => state.convId && state.unread[state.convId] && markRead(state.convId));
 document.addEventListener('visibilitychange', sendView);
