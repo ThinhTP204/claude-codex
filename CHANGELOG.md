@@ -2,6 +2,12 @@
 
 Mỗi phiên bản liệt kê những gì thay đổi. Dòng bắt đầu bằng **Mới:**, **Cải tiến:** hoặc **Sửa lỗi:** để app hiện nhãn tương ứng trong hộp thoại Cập nhật. Khi ra bản mới, thêm mục `## [x.y.z]` ở đầu danh sách, GitHub Actions lấy đúng mục đó làm nội dung Release.
 
+## [0.4.4] - 2026-10-01
+
+- Mới: Kéo file hoặc thư mục trong Explorer thả vào thư mục khác để chuyển chỗ, giống VS Code (rê lên thư mục đóng để mở ra, thả vào chỗ trống để đưa ra thư mục gốc)
+- Sửa lỗi: Thẻ duyệt bước pipeline và ô chat không còn tràn đè lên terminal khi khung chat thấp; thẻ duyệt tự cuộn
+- Sửa lỗi: File đính kèm khi chạy pipeline hiện thành ảnh hoặc thẻ file, không còn chỉ là danh sách đường dẫn
+
 ## [0.4.3] - 2026-10-01
 
 - Sửa lỗi: Kiểm tra cập nhật không còn báo "GitHub trả lỗi 403" khi GitHub giới hạn lượt gọi; app tự chuyển sang đường dự phòng và vẫn tìm được bản mới

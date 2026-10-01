@@ -301,6 +301,8 @@ function PipelineNote({ t }: { t: Turn }) {
   const [open, setOpen] = useState(false);
   const firstLine = (t.text || '').split('\n')[0].replace(/\*\*/g, '');
   const isPrompt = !!t.nodeId && !/^(✏️|💬)/.test(t.text || '');
+  // files dropped with the task: show them like in a normal message (the start note only, not every step)
+  const { text, paths } = splitAttachments(t.text || '');
   return (
     <div className="flex justify-end">
       <div className="max-w-[85%] rounded-xl border border-dashed border-line-strong px-3 py-1.5 text-[12.5px] text-muted">
@@ -309,7 +311,8 @@ function PipelineNote({ t }: { t: Turn }) {
           <span className="truncate">{isPrompt ? `Pipeline giao cho bước ${t.nodeLabel}` : firstLine}</span>
           <ChevronRight size={13} className={cx('shrink-0 transition-transform', open && 'rotate-90')} />
         </button>
-        {open && <div className="mt-1.5 max-h-80 overflow-auto whitespace-pre-wrap border-t border-line pt-1.5 text-[13px] text-fg/85">{t.text}</div>}
+        {open && <div className="mt-1.5 max-h-80 overflow-auto whitespace-pre-wrap border-t border-line pt-1.5 text-[13px] text-fg/85">{text}</div>}
+        {!isPrompt && paths.length > 0 && <SentAttachments paths={paths} start className="mt-1.5" />}
       </div>
     </div>
   );

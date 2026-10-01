@@ -64,9 +64,9 @@ export function AttachmentChip({ a, onRemove }: { a: Attachment; onRemove: () =>
 }
 
 /** Attachments shown under a sent message. */
-export function SentAttachments({ paths, className }: { paths: string[]; className?: string }) {
+export function SentAttachments({ paths, className, start }: { paths: string[]; className?: string; start?: boolean }) {
   return (
-    <div className={cx('flex flex-wrap justify-end gap-1.5', className)}>
+    <div className={cx('flex flex-wrap gap-1.5', start ? 'justify-start' : 'justify-end', className)}>
       {paths.map((p) =>
         uploaded(p) && isImage(p) ? (
           <a key={p} href={attachmentUrl(p)} target="_blank" rel="noreferrer" title={displayName(p)}>

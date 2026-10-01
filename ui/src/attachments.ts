@@ -37,16 +37,17 @@ export function withAttachments(text: string, atts: Attachment[]): string {
   return `${text.trim() || 'Xem các file đính kèm.'}\n\n${MARK}\n${paths.join('\n')}`;
 }
 
-/** Split a sent message back into its text and attachment paths (for display). */
+/** Split a sent message back into its text and attachment paths (for display). The list may sit
+ *  inside a longer text, e.g. a pipeline prompt that wraps the task in a template. */
 export function splitAttachments(text: string): { text: string; paths: string[] } {
   const i = text.lastIndexOf(`\n\n${MARK}\n`);
   if (i < 0) return { text, paths: [] };
-  const paths = text
-    .slice(i + MARK.length + 3)
-    .split('\n')
-    .map((l) => l.replace(/^- /, '').trim())
-    .filter(Boolean);
-  return { text: text.slice(0, i), paths };
+  const lines = text.slice(i + MARK.length + 3).split('\n');
+  let n = 0;
+  while (n < lines.length && /^- \S/.test(lines[n])) n++;
+  const paths = lines.slice(0, n).map((l) => l.slice(2).trim());
+  const rest = lines.slice(n).join('\n').trim();
+  return { text: rest ? `${text.slice(0, i)}\n\n${rest}` : text.slice(0, i), paths };
 }
 
 export const attachmentUrl = (path: string) => `/api/attachment?path=${encodeURIComponent(path)}&token=${encodeURIComponent(TOKEN)}`;

@@ -48,6 +48,24 @@ async function renameEntry(t: MenuTarget) {
   if (!t.isDir) openFile(to, { root: t.primary ? undefined : t.root });
 }
 
+/** Drag an entry onto a folder of the same workspace folder ("" = its top level). Open tabs follow the file. */
+export async function moveEntry(root: string, primary: boolean, from: string, toDir: string) {
+  const base = from.split('/').pop()!;
+  const to = [toDir, base].filter(Boolean).join('/');
+  const parent = from.split('/').slice(0, -1).join('/');
+  if (parent === toDir || to === from || toDir === from || toDir.startsWith(from + '/')) return; // same place, or a folder into itself
+  if (!(await call(root, 'rename', { from, to }))) return;
+  // reopen the files that were open under their new path (tab ids are path based)
+  const tabRoot = primary ? undefined : root;
+  const moved = getState()
+    .tabs.filter((t) => t.kind === 'file' && !t.diff && (t.root || undefined) === tabRoot && (t.path === from || t.path.startsWith(from + '/')))
+    .map((t) => to + (t as { path: string }).path.slice(from.length));
+  closeTabsUnder(tabRoot, from);
+  bump();
+  for (const p of moved) openFile(p, { root: tabRoot });
+  toast(`Đã chuyển ${base} vào ${toDir || 'thư mục gốc'}`, 'info');
+}
+
 async function deleteEntry(t: MenuTarget) {
   const what = t.isDir ? `thư mục "${t.path}" và mọi thứ bên trong` : `"${t.path}"`;
   if (!confirm(`Chuyển ${what} vào Thùng rác?\n(Khôi phục được từ Thùng rác)`)) return;

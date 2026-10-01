@@ -47,7 +47,7 @@ export function ChatView() {
   if (empty) return <Welcome />;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {conv?.run && !hidden && <RunBar run={conv.run} />}
       {conv && <AutoContinueBar conv={conv} />}
       <div
@@ -64,11 +64,18 @@ export function ChatView() {
           ))}
         </div>
       </div>
-      <div className="mx-auto w-full max-w-3xl px-4 pb-4">
+      {/* never taller than ~3/4 of the pane: the approval card scrolls, the composer always stays visible */}
+      <div className="mx-auto flex max-h-[78%] min-h-0 w-full max-w-3xl flex-col px-4 pb-4">
         {/* the big card only when the user has something to decide: approve a step, or read an error */}
-        {conv?.run && !hidden && ['awaiting', 'error'].includes(conv.run.status) && conv.run.current && <ApprovalCard conv={conv} run={conv.run} />}
-        <RoleChips />
-        <Composer />
+        {conv?.run && !hidden && ['awaiting', 'error'].includes(conv.run.status) && conv.run.current && (
+          <div className="min-h-0 overflow-y-auto">
+            <ApprovalCard conv={conv} run={conv.run} />
+          </div>
+        )}
+        <div className="shrink-0">
+          <RoleChips />
+          <Composer />
+        </div>
       </div>
     </div>
   );

@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, ChevronsDownUp, File, FileCode2, FileJson, FileText, Folder, FilePlus, FolderInput, FolderOpen, FolderPlus, GitBranch, Image, PanelRightClose, RefreshCw, Settings, Lock, X } from 'lucide-react';
 import type { FsEntry } from '../../../shared/types.ts';
 import { api, qs } from '../api.ts';
 import { addWorkspaceFolder, fileKey, openFile, refreshGit, removeWorkspaceFolder, setRightTab, setScmRoot, setState, useStore } from '../store.ts';
 import { cx } from './ui.tsx';
 import { REF_MIME } from '../attachments.ts';
+import { moveEntry } from './ExplorerMenu.tsx';
 import { ExplorerMenu, createEntry, type MenuTarget } from './ExplorerMenu.tsx';
 
 const EXT_COLOR: Record<string, string> = {
@@ -47,6 +48,9 @@ const GIT_TITLE: Record<string, string> = { M: 'Đã sửa', U: 'File mới (ch�
 const NO_GIT = { files: {} as Record<string, string> };
 
 /** File tree of one workspace folder. `multi`: several folders are open, so show a VS Code-style root header. */
+/** The Explorer entry being dragged (dataTransfer can't be read during dragover). */
+let dragged: { root: string; path: string } | null = null;
+
 function RootTree({
   root,
   primary,
@@ -63,6 +67,35 @@ function RootTree({
   onMenu: (t: MenuTarget) => void;
 }) {
   const fsVersion = useStore((s) => s.fsVersion);
+  const [dropDir, setDropDir] = useState<string | null>(null);
+  const hoverOpen = useRef<{ dir: string; timer: number } | null>(null);
+  /** Drop handlers for a folder ("" = top level); a file row passes its parent folder. */
+  const dropProps = (dir: string) => ({
+    onDragOver: (ev: React.DragEvent) => {
+      if (!dragged || dragged.root !== root) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.dataTransfer.dropEffect = 'move';
+      if (dropDir !== dir) setDropDir(dir);
+      // hovering a closed folder opens it, as in VS Code
+      if (dir && !expanded.has(dir) && hoverOpen.current?.dir !== dir) {
+        if (hoverOpen.current) clearTimeout(hoverOpen.current.timer);
+        hoverOpen.current = { dir, timer: window.setTimeout(() => setExpanded((e) => new Set(e).add(dir)), 700) };
+      }
+    },
+    onDragLeave: (ev: React.DragEvent) => {
+      if (!ev.currentTarget.contains(ev.relatedTarget as Node)) setDropDir((d) => (d === dir ? null : d));
+    },
+    onDrop: (ev: React.DragEvent) => {
+      if (!dragged || dragged.root !== root) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const from = dragged.path;
+      dragged = null;
+      setDropDir(null);
+      void moveEntry(root, primary, from, dir);
+    },
+  });
   const git = useStore((s) => (primary ? s.git : s.rootGit[root] || NO_GIT));
   const touched = useStore((s) => s.touched);
   const repos = useStore((s) => s.repos);
@@ -167,9 +200,20 @@ function RootTree({
                 const ref = primary ? e.path : `${root}/${e.path}`;
                 ev.dataTransfer.setData(REF_MIME, JSON.stringify([{ path: ref, name: e.name }]));
                 ev.dataTransfer.setData('text/plain', ref);
-                ev.dataTransfer.effectAllowed = 'copy';
+                // copy = attach in the chat, move = drop on another folder here
+                ev.dataTransfer.effectAllowed = 'copyMove';
+                dragged = { root, path: e.path };
               }}
-              className={cx('group relative flex h-[22px] cursor-pointer items-center gap-1 pr-2 text-[13px] hover:bg-hover', e.ignored && 'opacity-50')}
+              onDragEnd={() => {
+                dragged = null;
+                setDropDir(null);
+              }}
+              {...dropProps(isDir ? e.path : e.path.split('/').slice(0, -1).join('/'))}
+              className={cx(
+                'group relative flex h-[22px] cursor-pointer items-center gap-1 pr-2 text-[13px] hover:bg-hover',
+                e.ignored && 'opacity-50',
+                isDir && dropDir === e.path && 'bg-accent/15 outline outline-1 -outline-offset-1 outline-accent/60',
+              )}
               style={{ paddingLeft: 8 + depth * 12 }}
               title={code && !isDir ? `${e.path} · ${GIT_TITLE[code] || code}` : e.ignored ? `${e.path} · bị .gitignore` : e.path}
             >
@@ -239,7 +283,9 @@ function RootTree({
           <span className="truncate">{name}</span>
           {branch}
         </div>
-        {render('', 0)}
+        <div {...dropProps('')} className={cx('min-h-full pb-6', dropDir === '' && 'bg-accent/5')}>
+          {render('', 0)}
+        </div>
       </>
     );
 
@@ -272,7 +318,11 @@ function RootTree({
           </button>
         )}
       </div>
-      {open && render('', 0)}
+      {open && (
+        <div {...dropProps('')} className={cx(dropDir === '' && 'bg-accent/5')}>
+          {render('', 0)}
+        </div>
+      )}
     </div>
   );
 }
