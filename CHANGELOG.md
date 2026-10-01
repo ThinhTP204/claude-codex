@@ -2,6 +2,10 @@
 
 Mỗi phiên bản liệt kê những gì thay đổi. Dòng bắt đầu bằng **Mới:**, **Cải tiến:** hoặc **Sửa lỗi:** để app hiện nhãn tương ứng trong hộp thoại Cập nhật. Khi ra bản mới, thêm mục `## [x.y.z]` ở đầu danh sách, GitHub Actions lấy đúng mục đó làm nội dung Release.
 
+## [0.4.3] - 2026-10-01
+
+- Sửa lỗi: Kiểm tra cập nhật không còn báo "GitHub trả lỗi 403" khi GitHub giới hạn lượt gọi; app tự chuyển sang đường dự phòng và vẫn tìm được bản mới
+
 ## [0.4.2] - 2026-10-01
 
 - Mới: Logo mới: ngôi sao AI bốn cánh mang màu của Claude, Codex và Antigravity (icon app trên Mac, Windows, trong app và trang tải)

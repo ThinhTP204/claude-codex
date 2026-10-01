@@ -101,6 +101,42 @@ function newer(a: string, b: string): boolean {
   return false;
 }
 
+type Release = { tag_name: string; name?: string; html_url: string; body?: string; assets?: { name: string; browser_download_url: string }[] };
+
+/** The GitHub API: release notes + assets in one call, but only 60 calls/hour per IP without a token. */
+async function releaseFromApi(): Promise<Release> {
+  // AGENTDESK_RELEASES_API: point at another "latest release" JSON (used to test the updater)
+  const r = await fetch(process.env.AGENTDESK_RELEASES_API || `https://api.github.com/repos/${REPO}/releases/latest`, { headers: { accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15_000) });
+  if (!r.ok) throw Object.assign(new Error(`GitHub trả lỗi ${r.status}`), { status: r.status });
+  return (await r.json()) as Release;
+}
+
+/** The "## [x.y.z]" section of CHANGELOG.md (the release workflow publishes the same text). */
+function changelogSection(md: string, version: string): string {
+  const start = md.indexOf(`## [${version}]`);
+  if (start < 0) return '';
+  const rest = md.slice(md.indexOf('\n', start) + 1);
+  const end = rest.search(/^## \[/m);
+  return end < 0 ? rest : rest.slice(0, end);
+}
+
+/** Same answer without the API (no rate limit): the /releases/latest redirect, CHANGELOG.md at that tag, the asset's fixed name. */
+async function releaseFromWeb(): Promise<Release> {
+  const r = await fetch(`https://github.com/${REPO}/releases/latest`, { redirect: 'manual', signal: AbortSignal.timeout(15_000) });
+  const tag = /\/releases\/tag\/([^/?#]+)/.exec(r.headers.get('location') || '')?.[1];
+  if (!tag) throw Object.assign(new Error(`GitHub trả lỗi ${r.status}`), { status: r.status === 302 ? 404 : r.status });
+  const version = tag.replace(/^v/, '');
+  let body = '';
+  try {
+    const log = await fetch(`https://raw.githubusercontent.com/${REPO}/${tag}/CHANGELOG.md`, { signal: AbortSignal.timeout(15_000) });
+    if (log.ok) body = changelogSection(await log.text(), version);
+  } catch {
+    /* no notes, still updatable */
+  }
+  const name = `AgentDesk-app-${version}.tar.gz`;
+  return { tag_name: tag, html_url: `https://github.com/${REPO}/releases/tag/${tag}`, body, assets: [{ name, browser_download_url: `https://github.com/${REPO}/releases/download/${tag}/${name}` }] };
+}
+
 /** Packaged app (.dmg / setup.exe): compare with the latest GitHub release. */
 async function checkRelease(base: { behind: number; commits: UpdateCheck['commits']; checkedAt: number }): Promise<UpdateCheck> {
   let version = '0.0.0';
@@ -110,31 +146,36 @@ async function checkRelease(base: { behind: number; commits: UpdateCheck['commit
     /* unknown */
   }
   const info = { ...base, supported: true, packaged: true, version };
+  let rel: Release;
   try {
-    // AGENTDESK_RELEASES_API: point at another "latest release" JSON (used to test the updater)
-    const r = await fetch(process.env.AGENTDESK_RELEASES_API || `https://api.github.com/repos/${REPO}/releases/latest`, { headers: { accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15_000) });
-    if (!r.ok) return { ...info, reason: r.status === 404 ? undefined : `GitHub trả lỗi ${r.status}` };
-    const rel = (await r.json()) as { tag_name: string; name?: string; html_url: string; published_at?: string; body?: string; assets?: { name: string; browser_download_url: string }[] };
-    const latest = rel.tag_name.replace(/^v/, '');
-    if (!newer(latest, version)) return info;
-    // release notes: one change per "- " line
-    const notes = (rel.body || '')
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => /^[-*] /.test(l))
-      .map((l, i) => ({ hash: String(i), subject: l.slice(2), date: '' }));
-    return {
-      ...info,
-      behind: Math.max(1, notes.length),
-      commits: notes.length ? notes : [{ hash: rel.tag_name, subject: rel.name || `Phiên bản ${latest}`, date: '' }],
-      downloadUrl: rel.html_url,
-      payloadUrl: rel.assets?.find((a) => /^AgentDesk-app(-[\d.]+)?\.tar\.gz$/.test(a.name))?.browser_download_url,
-      latest,
-      subject: `Có bản ${latest}`,
-    };
+    rel = await releaseFromApi();
   } catch (e) {
-    return { ...info, reason: `Không kết nối được GitHub: ${(e as Error).message}` };
+    if (process.env.AGENTDESK_RELEASES_API) return { ...info, reason: (e as { status?: number }).status === 404 ? undefined : (e as Error).message };
+    try {
+      rel = await releaseFromWeb(); // API rate-limited or down
+    } catch (e2) {
+      const status = (e2 as { status?: number }).status;
+      if (status === 404) return info; // no release yet
+      return { ...info, reason: status ? `GitHub đang bận (lỗi ${status}). Thử lại sau ít phút.` : `Không kết nối được GitHub. Kiểm tra mạng rồi thử lại.` };
+    }
   }
+  const latest = rel.tag_name.replace(/^v/, '');
+  if (!newer(latest, version)) return info;
+  // release notes: one change per "- " line
+  const notes = (rel.body || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => /^[-*] /.test(l))
+    .map((l, i) => ({ hash: String(i), subject: l.slice(2), date: '' }));
+  return {
+    ...info,
+    behind: Math.max(1, notes.length),
+    commits: notes.length ? notes : [{ hash: rel.tag_name, subject: rel.name || `Phiên bản ${latest}`, date: '' }],
+    downloadUrl: rel.html_url,
+    payloadUrl: rel.assets?.find((a) => /^AgentDesk-app(-[\d.]+)?\.tar\.gz$/.test(a.name))?.browser_download_url,
+    latest,
+    subject: `Có bản ${latest}`,
+  };
 }
 
 let job: UpdateJob = { phase: 'idle', log: '' };
