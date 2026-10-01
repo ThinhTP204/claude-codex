@@ -107,8 +107,83 @@ export const DEFAULT_PIPELINE: Pipeline = {
   ],
 };
 
+/**
+ * The standard pipeline: each step is a stage with a contract (shared/stages.ts). No model is fixed
+ * on the nodes, so they follow the roles (change a role's model once, every pipeline uses it).
+ */
+const stageNode = (id: string, x: number, roleId: string, stage: Pipeline['nodes'][0]['data']['stage'], label: string, extra: Partial<Pipeline['nodes'][0]['data']> = {}) => ({
+  id,
+  type: 'agent' as const,
+  position: { x, y: 0 },
+  // every step waits for the user (human in the loop), passed or not
+  data: { label, roleId, stage, verdict: stage === 'review-plan' || stage === 'test' || stage === 'review-code', approval: true, maxLoops: 3, ...extra },
+});
+
+export const STANDARD_PIPELINE: Pipeline = {
+  id: 'standard',
+  name: 'Pipeline chuẩn (Plan → Review → Code → Test → Review code)',
+  nodes: [
+    { id: 'task', type: 'task', position: { x: 0, y: 80 }, data: { label: 'Task' } },
+    stageNode('plan', 320, 'plan', 'plan', 'Plan'),
+    stageNode('review-plan', 1300, 'review', 'review-plan', 'Review plan'),
+    stageNode('code', 2280, 'code', 'code', 'Code'),
+    stageNode('test', 3260, 'test', 'test', 'Test'),
+    stageNode('review-code', 4240, 'review', 'review-code', 'Review code'),
+    { id: 'end', type: 'end', position: { x: 5220, y: 95 }, data: { label: 'Done' } },
+  ],
+  edges: [
+    { id: 's1', source: 'task', target: 'plan', sourceHandle: 'out' },
+    { id: 's2', source: 'plan', target: 'review-plan', sourceHandle: 'out' },
+    { id: 's3', source: 'review-plan', target: 'code', sourceHandle: 'pass' },
+    { id: 's4', source: 'review-plan', target: 'plan', sourceHandle: 'fail' },
+    { id: 's5', source: 'code', target: 'test', sourceHandle: 'out' },
+    { id: 's6', source: 'test', target: 'review-code', sourceHandle: 'pass' },
+    { id: 's7', source: 'test', target: 'code', sourceHandle: 'fail' },
+    { id: 's8', source: 'review-code', target: 'end', sourceHandle: 'pass' },
+    { id: 's9', source: 'review-code', target: 'code', sourceHandle: 'fail' },
+  ],
+};
+
+// templates added to existing pipeline lists once (deleting one keeps it deleted)
+const SEEDED_FILE = dataFile('pipelines-seeded.json');
+
 export function getPipelines(): Pipeline[] {
-  return readJson<Pipeline[]>(PIPELINES_FILE, [DEFAULT_PIPELINE]);
+  const list = readJson<Pipeline[] | null>(PIPELINES_FILE, null) ?? [STANDARD_PIPELINE];
+  const seeded = readJson<string[]>(SEEDED_FILE, []);
+  let changed = false;
+  if (!seeded.includes(STANDARD_PIPELINE.id)) {
+    if (!list.some((p) => p.id === STANDARD_PIPELINE.id)) list.unshift(STANDARD_PIPELINE);
+    seeded.push(STANDARD_PIPELINE.id);
+    changed = true;
+  }
+  // the old built-in "Plan → Review → Code → Test" is replaced by the standard pipeline
+  if (!seeded.includes('drop:' + DEFAULT_PIPELINE.id)) {
+    const i = list.findIndex((p) => p.id === DEFAULT_PIPELINE.id);
+    if (i >= 0) list.splice(i, 1);
+    seeded.push('drop:' + DEFAULT_PIPELINE.id);
+    changed = true;
+  }
+  // the standard pipeline's layout changed (items and their points between steps): re-place its saved copy once
+  if (!seeded.includes('layout6:' + STANDARD_PIPELINE.id)) {
+    const std = list.find((p) => p.id === STANDARD_PIPELINE.id);
+    for (const n of std?.nodes ?? []) {
+      const fresh = STANDARD_PIPELINE.nodes.find((x) => x.id === n.id);
+      if (fresh) n.position = { ...fresh.position };
+    }
+    seeded.push('layout6:' + STANDARD_PIPELINE.id);
+    changed = true;
+  }
+  // human in the loop: every step of the saved standard pipeline waits for the user (once)
+  if (!seeded.includes('hitl:' + STANDARD_PIPELINE.id)) {
+    for (const n of list.find((p) => p.id === STANDARD_PIPELINE.id)?.nodes ?? []) if (n.type === 'agent') n.data.approval = true;
+    seeded.push('hitl:' + STANDARD_PIPELINE.id);
+    changed = true;
+  }
+  if (changed) {
+    writeJson(PIPELINES_FILE, list);
+    writeJson(SEEDED_FILE, seeded);
+  }
+  return list;
 }
 
 export function savePipeline(p: Pipeline): Pipeline[] {

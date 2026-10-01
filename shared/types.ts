@@ -1,5 +1,6 @@
 // Types shared by the server (run natively by Node with type stripping) and the UI.
 // Keep this file erasable-only (Node runs it with type stripping): no enums or namespaces.
+import type { AcceptanceCriterion, ChecklistItem, ItemStatus, StageKind, TestKind, TestMode } from './stages.ts';
 
 export type Agent = 'claude' | 'codex' | 'antigravity';
 
@@ -80,6 +81,29 @@ export interface PNodeData {
   approval?: boolean;
   verdict?: boolean;
   maxLoops?: number;
+  /** standard stage (shared/stages.ts): adds its contract to the prompt; unset = custom step */
+  stage?: StageKind;
+  /** Test step: which kinds of test to run (missing = auto) */
+  tests?: Partial<Record<TestKind, TestMode>>;
+  /** Test step: regression over the changed area or the whole project */
+  regression?: 'area' | 'full';
+  /** Review steps: full review every time, only what changed after the first one, or decide by itself */
+  reviewMode?: 'auto' | 'full' | 'incremental';
+  /** Review steps: what fails the step */
+  failAt?: 'blocking' | 'should';
+  /** the items this step is made of (missing = the stage's default checklist) */
+  checklist?: ChecklistItem[];
+  /** the user's own wording of the step (empty fields fall back to the stage's defaults) */
+  guide?: {
+    does?: string;
+    input?: string;
+    output?: string;
+    done?: string;
+    /** extra rules appended to the prompt */
+    rules?: string;
+    /** false = leave out the app's detailed rules for this kind of step */
+    standard?: boolean;
+  };
 }
 
 export interface PNode {
@@ -119,6 +143,10 @@ export interface NodeRunState {
   verdictMissing?: boolean;
   /** agent answered VERDICT: ASK, a question only the user can settle */
   needsInput?: boolean;
+  /** result of each checklist item, kept across rounds (a re-check only revisits the failed ones) */
+  items?: Record<string, { status: ItemStatus; note?: string }>;
+  /** the points the agent wrote under each item (plan section content, commands run, files changed…) */
+  subs?: Record<string, string[]>;
   /** fixing rounds are not converging: paused for the user instead of looping again (why) */
   stuck?: string;
   /** extra runs the user allowed after a pause */
@@ -138,6 +166,15 @@ export interface PipelineRun {
   nodes: Record<string, NodeRunState>;
   startedAt: number;
   endedAt?: number;
+  /** acceptance criteria the Plan step wrote, and what later steps said about each */
+  ac?: AcceptanceCriterion[];
+  /** task size the Plan step chose */
+  size?: 'Nhỏ' | 'Vừa' | 'Lớn';
+  /**
+   * What the checking steps said about each item (plan items P1…, criteria AC1…), by code.
+   * 'redo' = the step that made it has just reworked it, waiting for the next check.
+   */
+  marks?: Record<string, { status: ItemStatus | 'redo'; note?: string; by?: string }>;
 }
 
 /** "Tự tiếp tục": resume a conversation / pipeline stopped by quota or a transient error. */

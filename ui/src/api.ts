@@ -1,7 +1,8 @@
 const params = new URLSearchParams(location.search);
 const fromUrl = params.get('token');
 if (fromUrl) sessionStorage.setItem('agentdesk-token', fromUrl);
-export const TOKEN = fromUrl || sessionStorage.getItem('agentdesk-token') || '';
+// `npm run dev` (Vite dev server) always uses the fixed token "dev" (bin/dev.js); never in a build
+export const TOKEN = fromUrl || sessionStorage.getItem('agentdesk-token') || (import.meta.env.DEV ? 'dev' : '');
 export const URL_PROJECT = params.get('project');
 if (fromUrl || URL_PROJECT) history.replaceState(null, '', location.pathname);
 

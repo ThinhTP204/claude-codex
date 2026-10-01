@@ -2,6 +2,18 @@
 
 Mỗi phiên bản liệt kê những gì thay đổi. Dòng bắt đầu bằng **Mới:**, **Cải tiến:** hoặc **Sửa lỗi:** để app hiện nhãn tương ứng trong hộp thoại Cập nhật. Khi ra bản mới, thêm mục `## [x.y.z]` ở đầu danh sách, GitHub Actions lấy đúng mục đó làm nội dung Release.
 
+## [0.7.1] - 2026-10-01
+
+- Mới: Pipeline chuẩn (Plan → Review plan → Code → Test → Review code) thay cho pipeline cũ; mỗi bước nói rõ làm gì, dựa trên gì, phải trả về gì và thế nào là xong
+- Mới: Sơ đồ Flow dạng cây: mỗi bước tỏa ra các mục nó làm ra (phần của plan, tiêu chí đạt, loại test, tiêu chí soát), mỗi mục tách tiếp thành các ý con, rồi hội tụ vào bước sau
+- Mới: Bước kiểm tra chấm từng mục; mục chưa đạt có dây đỏ chỉ về, bước trước chỉ sửa đúng mục đó và lần sau chỉ chấm lại mục đó
+- Mới: 15 loại test (lint, build, unit, tích hợp, giao diện, hồi quy, bảo mật…), mỗi loại chạy khi phần thay đổi khớp, bật tắt được từng loại
+- Mới: Tự sửa được mục, ý con, hướng dẫn và quy tắc của từng bước trong khung cấu hình
+- Mới: Nút "Chạy lại từ đầu" bỏ kết quả lần chạy và chạy lại task từ bước đầu tiên
+- Cải tiến: Mọi bước của Pipeline chuẩn dừng chờ bạn duyệt, đạt hay chưa đạt
+- Cải tiến: Sidebar hiện sẵn agent và model của từng bước pipeline, kể cả bước chưa chạy
+- Cải tiến: Chạy từ mã nguồn (`npm run dev`) tự khởi động lại server khi code đổi
+
 ## [0.7.0] - 2026-10-01
 
 - Mới: Bảng Tasks dạng Kanban (mục Tasks ở sidebar): Việc cần làm, Đang chạy, Chờ duyệt, Lỗi / tạm dừng, Xong; mỗi thẻ cho thấy giai đoạn (Plan, Review, bước 2/4…), agent, model và việc đang làm

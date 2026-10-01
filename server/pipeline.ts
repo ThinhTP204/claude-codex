@@ -1,10 +1,12 @@
 import type { Conversation, PNode, Pipeline, PipelineRun, RunConfig, Turn } from '../shared/types.ts';
 import { sessionEvent } from './notify.ts';
 import { pipelineSkills } from './commands.ts';
-import { executeTurn, finalText, isRunning, publish, saveConv, stopConv } from './conversations.ts';
-import { getRoles } from './roles.ts';
+import { NEW_TITLE, executeTurn, finalText, isRunning, publish, saveConv, stopConv } from './conversations.ts';
+import { getPipelines, getRoles } from './roles.ts';
 import { uid } from './store.ts';
 import { reviewSections } from '../shared/verdict.ts';
+import { checklistOf, isProducer, judgedStep, parseCriteria, parseCriteriaStatus, parseItems, parseSize, parseSubs, producedItems } from '../shared/stages.ts';
+import { stageInstruction } from '../shared/stageGuide.ts';
 
 // Appended at run time, so it also applies to pipelines saved before these rules existed.
 const VERDICT_INSTRUCTION =
@@ -162,8 +164,16 @@ async function execNode(c: Conversation, run: PipelineRun, node: PNode): Promise
   let prompt = render(run, template, skills.task);
   if (/\{\{\s*task\s*\}\}/i.test(template)) prompt += skills.note;
   prompt += retryFeedback(run, node, cfg);
-  if (lastDemands) prompt += recheckInstruction(lastDemands);
-  else if (passedBefore) prompt += REGRESSION_CHECK;
+  // "full" review mode: every round is a full review, no narrowing to the earlier demands
+  if (node.data.reviewMode !== 'full') {
+    if (lastDemands) prompt += recheckInstruction(lastDemands);
+    else if (passedBefore) prompt += REGRESSION_CHECK;
+  }
+  // a checking step judges the items of the step it sends work back to
+  const judgedId = node.data.stage && !isProducer(node.data.stage) ? judgedStep(run.pipeline, node.id) : undefined;
+  const judgedNode = judgedId ? nodeOf(run, judgedId) : undefined;
+  const judged = judgedNode ? { label: judgedNode.data.label, items: producedItems(judgedNode.data.stage, judgedNode.data, run.ac) } : undefined;
+  prompt += stageInstruction(node.data.stage, node.data, run, st.runs > 1, cfg, judged);
   if (node.data.verdict) prompt += VERDICT_INSTRUCTION;
 
   const { turn, result } = await executeTurn(c, { prompt, config: cfg, roleName, roleIcon, nodeId: node.id, nodeLabel: node.data.label });
@@ -183,12 +193,54 @@ async function execNode(c: Conversation, run: PipelineRun, node: PNode): Promise
   }
   st.output = finalText(turn) || result.finalText;
   run.prevNode = node.id;
+  // the step's own list (criteria, self-checks, test kinds): kept per step, earlier results stay
+  if (node.data.stage && node.data.stage !== 'plan') {
+    const own = checklistOf(node.data.stage, node.data).filter((i) => !i.ac);
+    const found = parseItems(st.output, own.map((i) => i.id));
+    if (Object.keys(found).length) st.items = { ...st.items, ...found };
+  }
+  // what the agent wrote under each of its items: sub-cards on the flow (a redo replaces only the items it rewrote)
+  if (node.data.stage) {
+    const mine = [...(isProducer(node.data.stage) ? producedItems(node.data.stage, node.data, run.ac) : []), ...(node.data.stage === 'plan' ? [] : checklistOf(node.data.stage, node.data).filter((i) => !i.ac))];
+    const subs = parseSubs(st.output, mine, node.data.stage === 'plan' ? /^AC\d/i : undefined);
+    if (Object.keys(subs).length) st.subs = { ...st.subs, ...subs };
+  }
+  if (judged?.items.length) {
+    // the verdict on each item of the judged step; items not mentioned keep their earlier mark
+    const found = parseItems(st.output, judged.items.map((i) => i.id));
+    run.marks = { ...run.marks };
+    for (const [id, r] of Object.entries(found)) run.marks[id] = { ...r, by: node.data.label };
+  } else if (isProducer(node.data.stage) && run.marks) {
+    // reworked what a check failed: waiting for the next check
+    const mine = new Set(producedItems(node.data.stage, node.data, run.ac).map((i) => i.id));
+    run.marks = Object.fromEntries(Object.entries(run.marks).map(([id, m]) => [id, mine.has(id) && m.status === 'fail' ? { ...m, status: 'redo' as const } : m]));
+  }
+  // the plan's acceptance criteria travel with the run; checkers say which ones pass
+  if (node.data.stage === 'plan') {
+    const ac = parseCriteria(st.output);
+    if (ac.length) run.ac = ac;
+    run.size = parseSize(st.output) ?? run.size;
+  } else if (run.ac?.length && (node.data.stage === 'test' || node.data.stage === 'review-code')) {
+    const verdicts = parseCriteriaStatus(st.output);
+    run.ac = run.ac.map((a) => (verdicts[a.id] ? { ...a, status: verdicts[a.id], by: node.data.label } : a));
+    // an AC judged in the item lines counts too
+    for (const a of run.ac) {
+      const m = run.marks?.[a.id];
+      if (m && m.by === node.data.label && (m.status === 'pass' || m.status === 'fail')) Object.assign(a, { status: m.status, by: m.by });
+    }
+  }
   if (node.data.verdict) {
     const v = parseVerdict(st.output);
     // ASK: the reviewer needs a business decision; looping back would just fail again
     if (v === 'ask') st.needsInput = true;
     else if (v) st.verdict = v;
     else st.verdictMissing = true;
+  }
+  // the step passed overall: what it marked "chưa đạt" were only remarks, show them as notes
+  if (st.verdict === 'pass') {
+    const soften = <T extends { status: string }>(m: T): T => (m.status === 'fail' ? { ...m, status: 'warn' } : m);
+    if (run.marks) run.marks = Object.fromEntries(Object.entries(run.marks).map(([id, m]) => [id, m.by === node.data.label ? soften(m) : m]));
+    if (st.items) st.items = Object.fromEntries(Object.entries(st.items).map(([id, m]) => [id, soften(m)]));
   }
   // fixes not converging: ask the user instead of burning quota on another round
   if (st.verdict === 'fail') {
@@ -259,6 +311,8 @@ export function startPipeline(c: Conversation, pipeline: Pipeline, task: string)
   };
   run.nodes[start.id].output = task;
   c.run = run;
+  // name the session after the task, not after the first step's prompt
+  if (c.title === NEW_TITLE) c.title = task.split('\n\n📎 ')[0].replace(/\s+/g, ' ').slice(0, 80) || NEW_TITLE;
   addNote(c, `▶️ Chạy pipeline **${pipeline.name}**\n\n${task}`);
   saveConv(c, true);
   void pump(c);
@@ -319,4 +373,21 @@ export function stopPipeline(c: Conversation): void {
     saveConv(c, true);
     publish(c);
   }
+}
+
+/**
+ * Start the same task over from the first step: marks, criteria and every step's result are
+ * dropped. Uses the saved template when it still exists, so config changes made since apply.
+ */
+export async function resetPipeline(c: Conversation): Promise<void> {
+  const run = c.run;
+  if (!run) throw new Error('Chưa có pipeline nào để chạy lại.');
+  if (isRunning(c.id)) {
+    stopConv(c.id);
+    for (let i = 0; i < 100 && (isRunning(c.id) || run.status === 'running'); i++) await new Promise((r) => setTimeout(r, 100));
+  }
+  if (run.status === 'running') throw new Error('Chưa dừng được bước đang chạy, thử lại sau ít giây.');
+  stopPipeline(c);
+  addNote(c, '🔄 Chạy lại pipeline từ đầu.');
+  startPipeline(c, getPipelines().find((p) => p.id === run.pipeline.id) ?? run.pipeline, run.task);
 }

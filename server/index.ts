@@ -32,7 +32,7 @@ import {
   setBroadcast,
   stopConv,
 } from './conversations.ts';
-import { approve, rerun, startPipeline, stopPipeline } from './pipeline.ts';
+import { approve, rerun, resetPipeline, startPipeline, stopPipeline } from './pipeline.ts';
 import { changedFiles, chooseAttempt, discardFanout, fileVersions, runningFanout, startFanout, stopFanout } from './fanout.ts';
 import { deletePipeline, getPipelines, getRoles, savePipeline, saveRoles, DEFAULT_ROLES } from './roles.ts';
 import { browseDirs, clearStatusCache, projectRepos, resolveFileRef, safeJoin, forgetProject, setWorkspaceFolders, workspaceFolders, gitHead, gitStatus, listAllFiles, listDir, openProject, pickFolder, readFile, recentProjects, watchProject, writeFile } from './projects.ts';
@@ -403,7 +403,7 @@ export function start(opts: StartOptions): Promise<http.Server> {
       if (m === 'POST' && mm[3] === 'discard') return discardFanout(c, f.id).then(() => ({ ok: true }));
       if (m === 'POST' && mm[3] === 'stop') return stopFanout(c, f.id), { ok: true };
     }
-    if (m === 'POST' && (mm = /^\/conversations\/([^/]+)\/(send|stop|restart|run|approve|rerun|run-stop)$/.exec(p))) {
+    if (m === 'POST' && (mm = /^\/conversations\/([^/]+)\/(send|stop|restart|run|approve|rerun|run-stop|run-reset)$/.exec(p))) {
       const c = conv(mm[1]);
       const b = await body<any>(req);
       switch (mm[2]) {
@@ -435,6 +435,10 @@ export function start(opts: StartOptions): Promise<http.Server> {
           return { ok: true };
         case 'run-stop':
           stopPipeline(c);
+          return { ok: true };
+        case 'run-reset':
+          userActed(c);
+          await resetPipeline(c);
           return { ok: true };
       }
     }

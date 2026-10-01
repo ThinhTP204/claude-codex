@@ -146,7 +146,24 @@ Bấm ô **PROJECT → Đổi** ở góc trên sidebar trái, hoặc nhấn **�
 
 ### 3. Chạy pipeline
 
-**Cách nhanh:** gõ task vào ô chat rồi bấm **Pipeline → chọn template**.
+**Cách nhanh:** gõ task vào ô chat rồi bấm **Pipeline → Pipeline chuẩn**.
+
+**Pipeline chuẩn:** Plan → Review plan → Code → Test → Review code. Mỗi bước có "hợp đồng" rõ ràng (nhận gì, trả ra gì, thế nào là đạt):
+
+| Bước | Làm gì | Đạt khi |
+|---|---|---|
+| 🧭 Plan | Chốt phạm vi, giả định, tiêu chí đạt `AC1…n`, các bước, kế hoạch test, cỡ task | Đủ các mục, mỗi AC kiểm chứng được |
+| 🔍 Review plan | Soát plan với yêu cầu và code thật; ý chia mức Chặn / Nên sửa / Gợi ý | Không còn ý Chặn |
+| 🛠 Code | Viết code và test theo plan, tự chạy typecheck/build trước khi giao | Tự qua kiểm tra |
+| 🧪 Test | Chọn trong 15 loại test (tĩnh, build, unit, tích hợp, API, E2E, giao diện, hồi quy, bảo mật…) theo phần thay đổi, chạy hết một lượt, chấm từng AC | Không có lỗi mới do thay đổi này |
+| 🔎 Review code | Soát phần code đã đổi theo từng AC | Mọi AC đạt, không còn ý Chặn |
+
+- Trên sơ đồ, mỗi bước tỏa ra những gì nó làm ra rồi hội tụ vào bước kế tiếp: Plan → các mục P1… (phạm vi, hiện trạng, giả định, tiêu chí đạt, thiết kế, các bước, cách test, rủi ro) → Review plan → các tiêu chí soát R1… → Code → từng AC và các mục tự kiểm → Test → từng loại test → Review code → các tiêu chí K… → Xong. Bước kiểm tra chấm từng mục của bước trước; mục chưa đạt có dây đỏ chỉ về, bước trước chỉ sửa đúng mục đó và lần chấm sau chỉ chấm lại mục đó. Mỗi bước đều dừng chờ bạn duyệt.
+- Khi chạy, mỗi mục còn tách tiếp thành các ý con do AI viết (vd mục tiêu gồm những gì, phạm vi có những phần nào, lệnh test đã chạy, file đã sửa), các ý con hội tụ vào bước sau. Nút **Chạy lại từ đầu** bỏ kết quả lần chạy và chạy lại task từ bước đầu tiên.
+- Danh sách mục và tiêu chí soát mặc định theo cách làm phổ biến (design doc, checklist review, Definition of Done, code review của Google); sửa được trong tab Mục / Tiêu chí soát / Tự kiểm của từng bước.
+- Lỗi có sẵn từ trước không tính là chưa đạt; thiếu công cụ test thì ghi rõ chứ không đánh trượt.
+- Chưa đạt thì quay lại bước trước, lần chấm lại chỉ kiểm phần cũ chưa đạt và phần mới đổi. Sau 2 vòng sửa vẫn chưa đạt (hoặc lỗi lặp lại y hệt) thì dừng hỏi anh.
+- Trong Flow, node Test chọn được từng loại test là Tự động / Luôn chạy / Bỏ qua; node Review chọn cách chấm lại.
 
 **Thiết kế pipeline riêng (tab Flow → Thiết kế):**
 - **+ Thêm bước:** thêm một vai trò hoặc node kết thúc. Kéo từ chấm bên phải node này sang node kia để nối dây.

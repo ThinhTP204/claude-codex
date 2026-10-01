@@ -272,6 +272,16 @@ function RunBar({ run }: { run: PipelineRun }) {
             <RotateCcw size={12} /> Chạy tiếp từ {current.data.label}
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => {
+            if (confirm('Chạy lại pipeline từ đầu?\n\nKết quả và các mục đã chấm của lần chạy này sẽ bị bỏ. Tin nhắn trong chat vẫn giữ.')) void convAction('run-reset');
+          }}
+          title="Chạy lại task từ bước đầu tiên"
+          className="rounded-md p-1 text-muted hover:bg-hover hover:text-fg"
+        >
+          <RotateCcw size={13} />
+        </button>
         {(run.status === 'stopped' || run.status === 'done' || run.status === 'error') && (
           <button type="button" onClick={() => hideRun(run.id)} title="Ẩn thanh pipeline (vẫn xem được ở tab Flow)" className="rounded-md p-1 text-muted hover:bg-hover hover:text-fg">
             <X size={13} />

@@ -86,6 +86,9 @@ export function sessionStatus(c: Conversation, running: boolean): SessionStatus 
   return 'done';
 }
 
+/** A step's agent settings: its own, or its role's (standard steps follow their role). */
+const cfgOf = (d: { config?: { agent: Agent; model: string }; roleId?: string }) => d.config ?? getRoles().find((r) => r.id === d.roleId)?.config;
+
 /** Start of a turn's last text, as one plain line. */
 function excerpt(t: Turn | undefined, n = 140): string | undefined {
   const b = t?.blocks.findLast((x) => x.type === 'text') as { text: string } | undefined;
@@ -134,8 +137,9 @@ export function sessionLanes(c: Conversation, resolve: (id: string) => Conversat
         return {
           id: n.id,
           kind: 'step' as const,
-          agent: (turn?.agent ?? n.data.config?.agent ?? 'claude') as Agent,
-          model: turn?.model ?? n.data.config?.model,
+          // known before the step runs: its own settings, or its role's
+          agent: (turn?.agent ?? cfgOf(n.data)?.agent ?? 'claude') as Agent,
+          model: turn?.model ?? cfgOf(n.data)?.model,
           label: n.data.label,
           status,
           activity: status === 'running' && turn?.status === 'running' ? turnActivity(turn) : status === 'awaiting' ? 'Chờ bạn duyệt' : undefined,

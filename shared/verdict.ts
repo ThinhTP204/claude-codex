@@ -1,5 +1,5 @@
 /** Sections a reviewer is asked to write before its VERDICT line (see server/pipeline.ts). */
-const SECTIONS = ['Cần sửa', 'Câu hỏi', 'Lưu ý', 'Giả định'];
+const SECTIONS = ['Cần sửa', 'Nên sửa', 'Gợi ý', 'Câu hỏi', 'Lưu ý', 'Giả định'];
 
 const clean = (line: string) => line.replace(/^[#>\s*_`-]+/, '').replace(/[*_`]+/g, '').trim();
 
