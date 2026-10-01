@@ -105,7 +105,7 @@ function ConfirmReset({ credit, usage, onClose }: { credit: ResetCredit; usage: 
   const [busy, setBusy] = useState(false);
   const peak = Math.max(0, ...usage.windows.map((w) => w.usedPercent));
   return createPortal(
-    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/35 p-6" onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
+    <div data-keep-popover className="fixed inset-0 z-[60] grid place-items-center bg-black/35 p-6" onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
       <div className="w-[420px] rounded-2xl border border-line bg-panel p-5 shadow-pop">
         <div className="flex items-center gap-2 text-[15px] font-semibold">
           <AgentIcon agent="codex" size={18} /> Dùng 1 lượt reset Codex?

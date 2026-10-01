@@ -108,6 +108,8 @@ export function Popover({
     if (!open) return;
     const h = (e: MouseEvent) => {
       const t = e.target as Node;
+      // a dialog opened from inside the popover lives in a portal: clicking it must not close (and unmount) it
+      if ((t as Element).closest?.('[data-keep-popover]')) return;
       if (!pop.current?.contains(t) && !anchor.current?.contains(t)) setOpen(false);
     };
     const k = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
