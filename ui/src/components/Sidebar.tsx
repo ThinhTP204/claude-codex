@@ -38,15 +38,10 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }) {
   const list = useStore((s) => s.convList);
   const convId = useStore((s) => s.convId);
   const [q, setQ] = useState('');
-  const [filter, setFilter] = useState<'all' | 'app' | Agent>('all');
 
   const groups = useMemo(() => {
     const ql = q.toLowerCase();
-    const items = list.filter(
-      (c) =>
-        (!ql || c.title.toLowerCase().includes(ql)) &&
-        (filter === 'all' || (filter === 'app' ? c.source === 'app' : c.agents.includes(filter))),
-    );
+    const items = list.filter((c) => !ql || c.title.toLowerCase().includes(ql));
     const g = new Map<string, ConversationSummary[]>();
     // sessions at work (or waiting for you) stay on top, like Orca
     const live = items.filter(isLive);
@@ -57,7 +52,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }) {
       g.set(k, [...(g.get(k) || []), c]);
     }
     return [...g.entries()];
-  }, [list, q, filter]);
+  }, [list, q]);
 
   return (
     <aside className="flex h-full flex-col bg-sidebar">
@@ -87,25 +82,13 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }) {
           Cuộc trò chuyện mới
           <kbd className="ml-auto text-[11px] font-normal text-faint">⌘N</kbd>
         </button>
-        <div className="relative">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm session…" className="w-full rounded-lg bg-transparent py-1.5 pl-8 pr-2 text-[13px] outline-none placeholder:text-faint hover:bg-hover/60 focus:bg-hover/60" />
-        </div>
-        <div className="flex gap-1 px-1 pb-1 text-[11.5px]">
-          {(
-            [
-              ['all', 'Tất cả'],
-              ['app', 'AgentDesk'],
-              ['claude', 'Claude'],
-              ['codex', 'Codex'],
-            ] as const
-          ).map(([k, label]) => (
-            <button key={k} type="button" onClick={() => setFilter(k)} className={cx('whitespace-nowrap rounded-md px-1.5 py-0.5', filter === k ? 'bg-active text-fg' : 'text-faint hover:text-fg')}>
-              {label}
-            </button>
-          ))}
+        <div className="flex items-center gap-0.5 pb-1">
+          <div className="relative min-w-0 flex-1">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm session…" className="w-full rounded-lg bg-transparent py-1.5 pl-8 pr-2 text-[13px] outline-none placeholder:text-faint hover:bg-hover/60 focus:bg-hover/60" />
+          </div>
           <NotifyButton />
-          <button type="button" title="Làm mới" onClick={() => void refreshList()} className="rounded-md px-1 text-faint hover:text-fg">
+          <button type="button" title="Làm mới" onClick={() => void refreshList()} className="rounded-md p-1 text-faint hover:text-fg">
             <RefreshCw size={12} />
           </button>
         </div>
@@ -165,7 +148,7 @@ function NotifyButton() {
       type="button"
       onClick={() => setNotify(!on)}
       title={on ? 'Thông báo khi agent xong, lỗi hoặc chờ duyệt: đang bật' : 'Thông báo: đang tắt'}
-      className={cx('ml-auto rounded-md px-1', on ? 'text-faint hover:text-fg' : 'text-faint/60 hover:text-fg')}
+      className={cx('rounded-md p-1', on ? 'text-faint hover:text-fg' : 'text-faint/60 hover:text-fg')}
     >
       {on ? <Bell size={12} /> : <BellOff size={12} />}
     </button>
@@ -234,7 +217,7 @@ function SessionItem({ c, active }: { c: ConversationSummary; active: boolean })
   };
 
   const sub = [
-    solo?.activity,
+    solo && [AGENT_NAME[solo.agent], modelLabel(catalog, solo.agent, solo.label), solo.activity].filter(Boolean).join(' · '),
     c.status === 'awaiting' && !solo ? 'Chờ bạn duyệt' : undefined,
     c.autoAt && c.status !== 'running' ? `Tự tiếp tục lúc ${clock(c.autoAt)}` : undefined,
     c.status === 'error' && !c.autoAt ? 'Gặp lỗi' : undefined,

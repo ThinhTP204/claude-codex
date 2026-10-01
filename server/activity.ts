@@ -126,5 +126,5 @@ export function sessionLanes(c: Conversation, resolve: (id: string) => Conversat
   }
   const t = c.turns.findLast((x) => x.role === 'assistant' && x.status === 'running');
   if (!t) return [];
-  return [{ id: t.id, kind: 'agent', agent: t.agent ?? 'claude', label: t.roleName || t.model || '', status: 'running', activity: turnActivity(t), startedAt: t.createdAt }];
+  return [{ id: t.id, kind: 'agent', agent: t.agent ?? 'claude', label: t.model || t.roleName || '', status: 'running', activity: turnActivity(t), startedAt: t.createdAt }];
 }

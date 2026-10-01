@@ -2,6 +2,11 @@
 
 Mỗi phiên bản liệt kê những gì thay đổi. Dòng bắt đầu bằng **Mới:**, **Cải tiến:** hoặc **Sửa lỗi:** để app hiện nhãn tương ứng trong hộp thoại Cập nhật. Khi ra bản mới, thêm mục `## [x.y.z]` ở đầu danh sách, GitHub Actions lấy đúng mục đó làm nội dung Release.
 
+## [0.6.3] - 2026-10-01
+
+- Sửa lỗi: Session đang chạy hiện ngay agent, model và việc đang làm (vd "Claude · Haiku 4.5 · Đang chạy npm test"), không còn chỉ có vòng xoay
+- Cải tiến: Bỏ dòng lọc Tất cả / AgentDesk / Claude / Codex; nút chuông và làm mới nằm cạnh ô tìm session
+
 ## [0.6.2] - 2026-10-01
 
 - Sửa lỗi: Thông báo của macOS hiện tiếng Việt bị lỗi font (chữ có dấu thành ký tự lạ)

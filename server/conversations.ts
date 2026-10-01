@@ -363,6 +363,8 @@ export async function executeTurn(c: Conversation, o: TurnOptions): Promise<{ tu
       status: 'running',
     };
     c.turns.push(turn);
+    // index first: the sidebar shows this agent right away, not after its first tool call
+    saveConv(c);
     publish(c);
 
     const handle = startRun(cfg, context + o.prompt, c.projectPath, c.sessions[agent], {
