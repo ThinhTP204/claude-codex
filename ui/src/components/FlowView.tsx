@@ -13,9 +13,11 @@ import {
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
+  useStore as useFlowStore,
   type Connection,
   type Edge,
   type EdgeChange,
+  type MiniMapNodeProps,
   type Node,
   type NodeChange,
   type NodeProps,
@@ -319,6 +321,46 @@ function makeRoom(nodes: RFNode[]): { nodes: RFNode[]; shift: Map<string, number
   return { nodes: out, shift };
 }
 
+/** Items and their points are small and many: a node is the same as before when these match. */
+const sameNode = (a: Node<any>, b: Node<any>) => {
+  if (a.type !== b.type || a.position.x !== b.position.x || a.position.y !== b.position.y || a.measured?.width !== b.measured?.width || a.measured?.height !== b.measured?.height) return false;
+  const x = a.data as Record<string, unknown>;
+  const y = b.data as Record<string, unknown>;
+  const keys = Object.keys(x);
+  if (keys.length !== Object.keys(y).length) return false;
+  return keys.every((k) => {
+    if (x[k] === y[k]) return true;
+    if (k !== 'mark') return false;
+    const m = x[k] as Mark | undefined;
+    const n = y[k] as Mark | undefined;
+    return !!m && !!n && m.status === n.status && m.note === n.note && m.by === n.by;
+  });
+};
+const edgeKey = (e: Edge) => JSON.stringify([e.source, e.target, e.sourceHandle, e.targetHandle, e.type, e.animated, e.label, e.style, (e.markerEnd as { color?: string } | undefined)?.color, e.data]);
+
+/**
+ * Hand React Flow the same object for everything that did not change: it only redraws what it is
+ * given a new object for, so a run update touches the few cards that moved, not the hundreds around.
+ */
+function reuse<T extends { id: string }>(cache: Map<string, T>, list: T[], same: (a: T, b: T) => boolean): T[] {
+  const next = new Map<string, T>();
+  const out = list.map((x) => {
+    const prev = cache.get(x.id);
+    const keep = prev && same(prev, x) ? prev : x;
+    next.set(x.id, keep);
+    return keep;
+  });
+  cache.clear();
+  next.forEach((v, id) => cache.set(id, v));
+  return out;
+}
+
+/** Minimap: only the steps, not the hundreds of small cards. */
+function MiniStep({ id, x, y, width, height, borderRadius, color }: MiniMapNodeProps) {
+  if (id.includes('::')) return null;
+  return <rect x={x} y={y} width={width} height={height} rx={borderRadius} ry={borderRadius} fill={color || 'var(--line-strong)'} />;
+}
+
 /**
  * What a step turns out, fanned out to its right and flowing together into the next step:
  * Plan its sections, Review plan / Review code their criteria, Code one item per AC plus its
@@ -326,7 +368,7 @@ function makeRoom(nodes: RFNode[]): { nodes: RFNode[]; shift: Map<string, number
  * items it failed. Built from the steps on every render (not saved); returns which plain links the
  * item columns replace.
  */
-function treeOf(nodes: RFNode[], edges: Edge[], marks: PipelineRun['marks'], ac: AcceptanceCriterion[] | undefined, sizes: Record<string, { width: number; height: number }>) {
+function treeOf(nodes: RFNode[], edges: Edge[], marks: PipelineRun['marks'], ac: AcceptanceCriterion[] | undefined, sizes: Record<string, { width: number; height: number }>, lod = false) {
   const out: Node<ItemData | SubData>[] = [];
   const links: Edge[] = [];
   const hidden = new Set<string>();
@@ -406,8 +448,9 @@ function treeOf(nodes: RFNode[], edges: Edge[], marks: PipelineRun['marks'], ac:
       const blamer = judged && mark?.status === 'fail' ? checkers.find((c) => c.data.label === mark.by) : undefined;
       if (blamer) links.push(link(`b:${id}`, blamer.id, 'blame', id, 'blame', true));
       // the item opens into the points written under it, and those flow into the next step
+      // zoomed far out the points are unreadable: skip them (the layout keeps their room)
       let sy = top + h / 2 - pointsHeight(item) / 2;
-      subs.forEach((text, k) => {
+      (lod ? [] : subs).forEach((text, k) => {
         const sid = `${id}::${k}`;
         const py = sy;
         sy += subHeight(text, sizes[sid]) + SUB_GAP_Y;
@@ -424,7 +467,7 @@ function treeOf(nodes: RFNode[], edges: Edge[], marks: PipelineRun['marks'], ac:
         links.push(link(`s:${sid}`, id, 'out', sid, 'in'));
         if (!blamer && target) links.push(link(`c:${sid}`, sid, 'out', target.id, 'items'));
       });
-      if (!blamer && target && !subs.length) links.push(link(`c:${id}`, id, 'out', target.id, 'items'));
+      if (!blamer && target && (lod || !subs.length)) links.push(link(`c:${id}`, id, 'out', target.id, 'items'));
     }
     // the item column stands for the plain link from this step to the next
     if (next) hidden.add(next.id);
@@ -614,18 +657,19 @@ function FlowInner() {
     }
   }, [mode, base]);
 
-  // live run view
+  // live run view: rebuilt only while the Flow tab is on screen (a hidden tab catches up when opened)
+  const activeTab = useStore((s) => s.activeTab);
+  const onScreen = activeTab === 'flow';
   useEffect(() => {
-    if (mode !== 'run' || !run) return;
+    if (mode !== 'run' || !run || !onScreen) return;
     const g = toRF(run.pipeline, run);
-    setNodes((prev) => g.nodes.map((n) => ({ ...n, position: prev.find((p) => p.id === n.id)?.position ?? n.position, selected: n.id === selected })));
+    setNodes((prev) => g.nodes.map((n) => ({ ...n, position: prev.find((p) => p.id === n.id)?.position ?? n.position })));
     setEdges(g.edges);
-  }, [mode, run, selected]);
+  }, [mode, run, onScreen]);
 
   // fit once per pipeline/run, after its nodes are on the canvas and the tab is visible
   const fitKey = `${mode}:${mode === 'run' ? runId : tplId}`;
   const fitted = useRef('');
-  const activeTab = useStore((s) => s.activeTab);
   useEffect(() => {
     if (!nodes.length || activeTab !== 'flow' || fitted.current === fitKey) return;
     const t = setTimeout(() => {
@@ -648,22 +692,27 @@ function FlowInner() {
   const placed = room.nodes;
   const shiftRef = useRef(room.shift);
   shiftRef.current = room.shift;
-  const tree = useMemo(() => treeOf(placed, edges, marks, runAc, itemSizes), [placed, edges, marks, runAc, itemSizes]);
+  // zoomed far out the small cards cannot be read: draw only the steps and their items
+  const lod = useFlowStore((st) => st.transform[2] < 0.3);
+  const tree = useMemo(() => treeOf(placed, edges, marks, runAc, itemSizes, lod), [placed, edges, marks, runAc, itemSizes, lod]);
+  const nodeCache = useRef(new Map<string, Node<any>>());
+  const edgeCache = useRef(new Map<string, Edge>());
   const shownNodes = useMemo(() => {
     const flow = { nodes: nodes.map((n) => ({ id: n.id, type: n.type ?? '', data: n.data })), edges: edges.map((e) => ({ source: e.source, target: e.target, sourceHandle: e.sourceHandle })) };
     const withJudge = placed.map((n) => {
-      if (n.type !== 'agent' || !n.data.stage || isProducer(n.data.stage)) return n;
+      const sel = n.id === selected;
+      if (n.type !== 'agent' || !n.data.stage || isProducer(n.data.stage)) return n.selected === sel ? n : { ...n, selected: sel };
       const target = nodes.find((x) => x.id === judgedStep(flow, n.id));
-      if (!target) return n;
-      return { ...n, data: { ...n.data, judge: { label: target.data.label, items: producedItems(target.data.stage, target.data, runAc) } } };
+      if (!target) return n.selected === sel ? n : { ...n, selected: sel };
+      return { ...n, selected: sel, data: { ...n.data, judge: { label: target.data.label, items: producedItems(target.data.stage, target.data, runAc) } } };
     });
-    return [...withJudge, ...tree.nodes] as RFNode[];
-  }, [nodes, placed, edges, tree, runAc]);
+    return [...withJudge, ...reuse(nodeCache.current, tree.nodes, sameNode)] as RFNode[];
+  }, [nodes, placed, edges, tree, runAc, selected]);
   // loop-back lanes follow the nodes as they are dragged around
   const shownEdges = useMemo(() => {
     const ceiling = tree.nodes.length ? Math.min(...tree.nodes.map((n) => n.position.y)) : undefined;
     const main = assignLanes(edges.filter((e) => !tree.hidden.has(e.id)), placed).map((e) => (e.sourceHandle === 'fail' && ceiling !== undefined ? { ...e, data: { ...e.data, ceiling } } : e));
-    return [...main, ...tree.edges];
+    return reuse(edgeCache.current, [...main, ...tree.edges], (a, b) => edgeKey(a) === edgeKey(b));
   }, [edges, placed, tree]);
 
   const tidy = () => {
@@ -681,9 +730,15 @@ function FlowInner() {
       const sizes = all.filter((c) => isItem(c) && c.type === 'dimensions' && c.dimensions);
       if (sizes.length)
         setItemSizes((prev) => {
-          const next = { ...prev };
-          for (const c of sizes) if (c.type === 'dimensions' && c.dimensions) next[c.id] = c.dimensions;
-          return next;
+          let next: typeof prev | undefined;
+          for (const c of sizes) {
+            if (c.type !== 'dimensions' || !c.dimensions || !c.dimensions.width || !c.dimensions.height) continue;
+            const old = prev[c.id];
+            // a hidden tab measures 0, and a pixel of difference is not worth laying everything out again
+            if (old && Math.abs(old.height - c.dimensions.height) < 4 && Math.abs(old.width - c.dimensions.width) < 4) continue;
+            (next ??= { ...prev })[c.id] = c.dimensions;
+          }
+          return next ?? prev;
         });
       // a dragged step is shown shifted (see makeRoom): keep its own position without the shift
       const ch = all
@@ -1013,11 +1068,12 @@ function FlowInner() {
             proOptions={{ hideAttribution: true }}
             minZoom={0.12}
             maxZoom={1.6}
+            onlyRenderVisibleElements
             fitView
           >
             <Background variant={BackgroundVariant.Dots} gap={18} size={1.2} color="var(--line-strong)" />
             <Controls showInteractive={false} />
-            <MiniMap pannable zoomable bgColor="var(--panel)" maskColor="color-mix(in srgb, var(--bg) 70%, transparent)" nodeStrokeWidth={2} nodeColor={(n) => ((n.data as NData).run?.status === 'running' ? 'var(--accent)' : 'var(--line-strong)')} />
+            <MiniMap nodeComponent={MiniStep} pannable zoomable bgColor="var(--panel)" maskColor="color-mix(in srgb, var(--bg) 70%, transparent)" nodeStrokeWidth={2} nodeColor={(n) => ((n.data as NData).run?.status === 'running' ? 'var(--accent)' : 'var(--line-strong)')} />
           </ReactFlow>
         </div>
         {sel && (

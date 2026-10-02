@@ -2,6 +2,11 @@
 
 Mỗi phiên bản liệt kê những gì thay đổi. Dòng bắt đầu bằng **Mới:**, **Cải tiến:** hoặc **Sửa lỗi:** để app hiện nhãn tương ứng trong hộp thoại Cập nhật. Khi ra bản mới, thêm mục `## [x.y.z]` ở đầu danh sách, GitHub Actions lấy đúng mục đó làm nội dung Release.
 
+## [0.7.2] - 2026-10-02
+
+- Cải tiến: Trang Flow nhẹ hơn nhiều khi pipeline có nhiều mục và ý con: chỉ vẽ phần đang nhìn thấy, chỉ vẽ lại thẻ đã đổi, tab Flow không dựng lại ngầm khi bạn đang ở tab khác
+- Cải tiến: Thu nhỏ sơ đồ xa thì ẩn các ý con cho đỡ nặng; minimap chỉ hiện các bước
+
 ## [0.7.1] - 2026-10-01
 
 - Mới: Pipeline chuẩn (Plan → Review plan → Code → Test → Review code) thay cho pipeline cũ; mỗi bước nói rõ làm gì, dựa trên gì, phải trả về gì và thế nào là xong
